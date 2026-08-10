@@ -1,5 +1,6 @@
 import { BlocksError, blocksFetch } from '@/lib/blocks-client';
 import { IAM_BASE, withoutPort } from '@/lib/env';
+import { markSignedIn } from '@/state/auth-store';
 
 /**
  * Embedded ("implicit") login — the app owns the login screen.
@@ -67,6 +68,8 @@ export async function loginWithPassword(username: string, password: string): Pro
     body: { username, password },
     noRetry: true, // a 401 here means bad credentials, not an expired session
   });
+  // From now on a 401 is renewable rather than terminal — see state/auth-store.
+  markSignedIn();
 }
 
 /**
@@ -119,6 +122,7 @@ export async function finishSocialLogin(search: string): Promise<void> {
   // Only drop the marker once the session actually exists — the sign-up path
   // below still needs to know which provider vouched for this person.
   sessionStorage.removeItem(PROVIDER_KEY);
+  markSignedIn();
 }
 
 /**

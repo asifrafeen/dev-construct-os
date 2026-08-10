@@ -1,4 +1,5 @@
 import { BLOCKS, IAM_BASE, withoutPort } from '@/lib/env';
+import { markSignedIn } from '@/state/auth-store';
 import { describeAuthError } from './errors';
 
 /**
@@ -65,4 +66,7 @@ export async function finishLogin(search: string): Promise<void> {
     const detail = await res.text().catch(() => '');
     throw new Error(describeAuthError(res.status, detail));
   }
+
+  // The session cookie now exists, so a later 401 is renewable — see state/auth-store.
+  markSignedIn();
 }

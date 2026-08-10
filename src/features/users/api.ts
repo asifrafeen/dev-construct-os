@@ -1,5 +1,6 @@
-import { blocksFetch } from '@/lib/blocks-client';
-import { BLOCKS, IAM_BASE } from '@/lib/env';
+import { blocksFetch, UnauthorizedError } from '@/lib/blocks-client';
+import { IAM_BASE } from '@/lib/env';
+import { markSignedIn } from '@/state/auth-store';
 
 const IAM = `${IAM_BASE}/iam`;
 
@@ -40,20 +41,24 @@ export interface Paged<T> {
 
 export const users = {
   /**
-   * The auth-state probe. `/iam/me` succeeds only with a valid session cookie, so a 401
-   * is a real answer ("logged out"), not a failure — hence `null` instead of a throw.
+   * The auth-state probe, and the route guard's only input.
+   *
+   * It must go through `blocksFetch`, not a bare `fetch`: an expired access token answers
+   * 401, and only `blocksFetch` turns that into renew-then-retry. Probing directly would
+   * read every expiry as "signed out" and bounce the user to /login while a perfectly good
+   * refresh cookie sat unused.
+   *
+   * So a 401 here is already a *post-renewal* 401 — the session really is gone, and `null`
+   * is the honest answer. Other failures (offline, 5xx) are not answers and propagate.
    */
   meOrNull: async (): Promise<Me | null> => {
     try {
-      const res = await fetch(`${IAM}/me`, {
-        credentials: 'include',
-        headers: { 'x-blocks-key': BLOCKS.projectKey },
-      });
-      if (res.status === 401) return null;
-      if (!res.ok) throw new Error(`me → ${res.status}`);
-      return ((await res.json()) as { data: Me }).data;
-    } catch {
-      return null;
+      const { data } = await blocksFetch<{ data: Me }>(`${IAM}/me`);
+      markSignedIn(); // a live session, however it was established
+      return data;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) return null;
+      throw error;
     }
   },
 
