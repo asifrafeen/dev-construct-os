@@ -1,0 +1,20 @@
+node_modules
+dist
+dist-ssr
+*.local
+.cert/
+
+# Admin/CLI credentials for the Blocks configuration scripts — never commit.
+.env.blocks
+
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+*.log
+
+# Build info
+tsconfig.tsbuildinfo
+
+# Local env: contains this deployment's project key / client id.
+# .env.example documents the shape; see README for the values each needs.
+.env

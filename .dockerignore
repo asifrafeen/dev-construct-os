@@ -1,0 +1,19 @@
+# Secrets — must never enter a build layer.
+.env.blocks
+.env.local
+.cert/
+
+# Reinstalled by `npm ci` inside the image; copying it is slow and can break
+# native modules built for another platform.
+node_modules
+
+# Build output — the image builds its own.
+dist
+build
+tsconfig.tsbuildinfo
+
+.git
+.gitignore
+.vscode
+*.log
+README.md
