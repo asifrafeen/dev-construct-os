@@ -22,9 +22,11 @@ npm install
 
 ### 1. Create the OIDC client
 
-Login is a **hosted authorization-code flow** — Blocks owns the login screen, so the app
-needs an OIDC client id before anything else works. Creating one is an admin operation, so
-it needs your Blocks account credentials in a **separate, git-ignored** file:
+The sign-in page offers three ways in — an in-app email/password form, the Google and
+Microsoft buttons, and **Continue with SELISE Blocks** (the Blocks-hosted login page).
+Only that last one needs an OIDC client id; if you set `VITE_BLOCKS_HOSTED_LOGIN=false`
+you can skip this whole step. Creating a client is an admin operation, so it needs your
+Blocks account credentials in a **separate, git-ignored** file:
 
 ```bash
 # .env.blocks  — write this yourself; never commit it
@@ -75,17 +77,33 @@ work, but SSO login will not complete there.
 
 ### 3. Sign in
 
-Open `https://dfqfhj.slsblx.com:5173`, click **Sign in**, authenticate on the Blocks-hosted
-login, and you land back on `/login/callback`, which sets the session cookie.
+Open `https://dfqfhj.slsblx.com:5173` and use whichever route you like — the password form,
+Google/Microsoft, or **SELISE Blocks**. All three land you on the dashboard.
 
 ## How auth works
 
+Three sign-in routes, one outcome. Each ends with IAM setting the *same* HttpOnly session
+cookie, so everything downstream (`/iam/me`, the 401 refresh-and-retry, logout) is identical
+no matter how you signed in. They are not alternatives to choose between — they are all on.
+
 ```
-Sign in  →  GET  /iam/v4/idp/initiate     (fetch, not a navigation — returns an authorize URL)
-         →  redirect to iam.seliseblocks.com
-         →  GET  /iam/v4/idp/callback     (sets the HttpOnly session cookie)
-         →  GET  /iam/v4/iam/me           (the auth-state source of truth)
+password   →  POST /iam/v4/auth/login                          → session cookie
+social     →  GET  /iam/v4/auth/social/initiate   → provider
+           →  POST /iam/v4/auth/social/callback   (on /callback)        → session cookie
+hosted     →  GET  /iam/v4/idp/initiate      (fetch, not a navigation — returns an authorize URL)
+           →  redirect to iam.seliseblocks.com
+           →  GET  /iam/v4/idp/callback      (on /login/callback)       → session cookie
+
+then       →  GET  /iam/v4/iam/me            (the auth-state source of truth)
 ```
+
+The two callbacks are separate routes and separate registered redirect URIs, so the flows
+never collide. `VITE_BLOCKS_HOSTED_LOGIN=false` drops the hosted button and its two config
+requirements (`VITE_BLOCKS_OIDC_CLIENT_ID`, `VITE_BLOCKS_REDIRECT_URI`); the embedded flows
+derive their redirect from the live origin instead.
+
+Which providers appear under "or continue with" comes from `GET /iam/v4/auth/login-options`
+— a provider missing there is switched off on the project, not in this app.
 
 Three rules the whole client layer is built on:
 
@@ -121,8 +139,9 @@ src/
 
 | Path | Auth | Purpose |
 |---|---|---|
-| `/login` | public | Starts the hosted SSO flow |
-| `/login/callback` | public | Finalizes login — must match the registered `redirectUri` |
+| `/login` | public | Password form + social buttons + hosted-Blocks button |
+| `/callback` | public | Finalizes embedded social login |
+| `/login/callback` | public | Finalizes hosted login — must match the registered `redirectUri` |
 | `/activate` | public | Invite-and-activate only; not part of normal login |
 | `/` | required | Dashboard — session, roles, permissions |
 | `/users` | required | Project users |

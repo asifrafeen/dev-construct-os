@@ -17,6 +17,16 @@ export const BLOCKS = {
   oidcClientId: import.meta.env.VITE_BLOCKS_OIDC_CLIENT_ID ?? '',
   /** Must match a registered redirectUri byte-for-byte. */
   redirectUri: import.meta.env.VITE_BLOCKS_REDIRECT_URI ?? '',
+  /**
+   * Offer "Continue with SELISE Blocks" (the hosted login page) alongside the
+   * embedded password form and the social buttons. On by default; set
+   * VITE_BLOCKS_HOSTED_LOGIN=false to hide it and keep login fully in-app.
+   *
+   * The three flows are not alternatives — they all end in the same session
+   * cookie and land on different routes (/callback vs /login/callback), so they
+   * coexist. This switch is a presentation choice, not a compatibility one.
+   */
+  hostedLogin: import.meta.env.VITE_BLOCKS_HOSTED_LOGIN !== 'false',
 } as const;
 
 /**
@@ -44,17 +54,24 @@ export function configIssues(): string[] {
   const issues: string[] = [];
   if (!BLOCKS.apiUrl) issues.push('VITE_BLOCKS_API_URL is not set.');
   if (!BLOCKS.projectKey) issues.push('VITE_BLOCKS_PROJECT_KEY is not set.');
-  if (!BLOCKS.oidcClientId)
-    issues.push(
-      'VITE_BLOCKS_OIDC_CLIENT_ID is not set — run `npm run blocks:configure-oidc` and paste the clientId into .env.',
-    );
-  if (!BLOCKS.redirectUri) issues.push('VITE_BLOCKS_REDIRECT_URI is not set.');
+  // Both only feed the hosted flow — the embedded password and social logins
+  // derive their redirect from the live origin and need no OIDC client.
+  if (BLOCKS.hostedLogin) {
+    if (!BLOCKS.oidcClientId)
+      issues.push(
+        'VITE_BLOCKS_OIDC_CLIENT_ID is not set — run `npm run blocks:configure-oidc` and paste the clientId into .env, or set VITE_BLOCKS_HOSTED_LOGIN=false.',
+      );
+    if (!BLOCKS.redirectUri) issues.push('VITE_BLOCKS_REDIRECT_URI is not set.');
+  }
 
-  if (BLOCKS.apiUrl && BLOCKS.redirectUri) {
+  // Falls back to the live origin so the same-site check still runs with the
+  // hosted flow switched off, where there is no configured redirect URI.
+  const appUrl = BLOCKS.redirectUri || window.location.origin;
+  if (BLOCKS.apiUrl && appUrl) {
     const registrable = (host: string) => host.split('.').slice(-2).join('.');
     try {
       const api = registrable(new URL(BLOCKS.apiUrl).hostname);
-      const app = registrable(new URL(BLOCKS.redirectUri).hostname);
+      const app = registrable(new URL(appUrl).hostname);
       if (api !== app) {
         issues.push(
           `VITE_BLOCKS_API_URL (${api}) is not same-site with the app domain (${app}) — ` +

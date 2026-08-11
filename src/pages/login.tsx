@@ -19,16 +19,26 @@ import {
 } from '@/features/auth/embedded';
 import { authErrorMessage } from '@/features/auth/errors';
 import { ProviderButton } from '@/features/auth/provider-button';
+import { startLogin } from '@/features/auth/sso';
 import { ME_KEY, useIsLoggedIn } from '@/features/users/hooks';
-import { configIssues } from '@/lib/env';
+import { BLOCKS, configIssues } from '@/lib/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/misc';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 /**
- * Embedded login: the form and the provider buttons live here, and nothing
- * redirects through the Blocks-hosted login screen. See features/auth/embedded.ts.
+ * The sign-in page offers all three routes into the same session:
+ *
+ *   password + social  embedded — handled in-app, see features/auth/embedded.ts
+ *   Continue with Blocks  hosted — bounces through the Blocks login, see features/auth/sso.ts
+ *
+ * They are not alternatives: each one ends with IAM setting the same HttpOnly
+ * session cookie, and they return on different routes (/callback vs
+ * /login/callback). VITE_BLOCKS_HOSTED_LOGIN=false hides the hosted button.
  */
+
+/** pendingProvider marker for the hosted flow — never collides with a provider name. */
+const HOSTED = '__blocks_hosted__';
 
 const HIGHLIGHTS = [
   {
@@ -94,6 +104,7 @@ export function LoginPage() {
 
   const blocked = issues.length > 0;
   const providers = options?.ssoInfo ?? [];
+  const hostedLogin = BLOCKS.hostedLogin && !!BLOCKS.oidcClientId;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -116,6 +127,16 @@ export function LoginPage() {
     setError(null);
     // Redirects the browser on success, so nothing after this resolves.
     startSocialLogin(provider).catch((e) => {
+      setError(authErrorMessage(e));
+      setPendingProvider(null);
+    });
+  }
+
+  /** Hand off to the Blocks-hosted login; it returns on /login/callback. */
+  function onHostedLogin() {
+    setPendingProvider(HOSTED);
+    setError(null);
+    startLogin().catch((e) => {
       setError(authErrorMessage(e));
       setPendingProvider(null);
     });
@@ -273,7 +294,7 @@ export function LoginPage() {
             </p>
           )}
 
-          {providers.length > 0 && (
+          {(providers.length > 0 || hostedLogin) && (
             <>
               <div className="mt-8 flex items-center gap-3">
                 <span className="h-px flex-1 bg-border" />
@@ -283,20 +304,39 @@ export function LoginPage() {
                 <span className="h-px flex-1 bg-border" />
               </div>
 
-              <div
-                className={`mt-4 grid gap-2 ${providers.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
-              >
-                {providers.map((p) => (
-                  <ProviderButton
-                    key={p.provider}
-                    provider={p}
-                    busy={pendingProvider === p.provider}
-                    disabled={busy || blocked || !!pendingProvider}
-                    compact={providers.length > 2}
-                    onSelect={onProvider}
-                  />
-                ))}
-              </div>
+              {providers.length > 0 && (
+                <div
+                  className={`mt-4 grid gap-2 ${providers.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+                >
+                  {providers.map((p) => (
+                    <ProviderButton
+                      key={p.provider}
+                      provider={p}
+                      busy={pendingProvider === p.provider}
+                      disabled={busy || blocked || !!pendingProvider}
+                      compact={providers.length > 2}
+                      onSelect={onProvider}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {hostedLogin && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={`w-full ${providers.length > 0 ? 'mt-2' : 'mt-4'}`}
+                  disabled={busy || blocked || !!pendingProvider}
+                  onClick={onHostedLogin}
+                >
+                  <Blocks className="h-4 w-4 text-primary" />
+                  <span>
+                    {pendingProvider === HOSTED
+                      ? 'Redirecting to SELISE Blocks…'
+                      : 'SELISE Blocks'}
+                  </span>
+                </Button>
+              )}
             </>
           )}
 
