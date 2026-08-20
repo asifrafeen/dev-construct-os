@@ -147,6 +147,7 @@ export function LoginPage() {
       {/* Build-pipeline probe: VITE_BLOCKS_EXTRA_ARG, printed verbatim and
           deliberately unstyled so it reads the same in either theme. Hidden
           entirely when the build supplied no value. */}
+          <h1>Extra Arg</h1>
       {BLOCKS.extraArg && (
         <h1 style={{ background: '#fff', color: '#000', padding: '8px', textAlign: 'center' }}>
           {BLOCKS.extraArg}
