@@ -27,6 +27,12 @@ export const BLOCKS = {
    * coexist. This switch is a presentation choice, not a compatibility one.
    */
   hostedLogin: import.meta.env.VITE_BLOCKS_HOSTED_LOGIN !== 'false',
+  /**
+   * Free-form build-pipeline probe. Carries no behaviour — the login page prints
+   * it verbatim so a running image visibly reports which --build-arg values it
+   * was built from. Empty when the build did not supply one.
+   */
+  extraArg: import.meta.env.VITE_BLOCKS_EXTRA_ARG ?? '',
 } as const;
 
 /**

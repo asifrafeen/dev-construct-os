@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_BLOCKS_PROJECT_KEY: string;
   readonly VITE_BLOCKS_OIDC_CLIENT_ID: string;
   readonly VITE_BLOCKS_REDIRECT_URI: string;
+  readonly VITE_BLOCKS_EXTRA_ARG?: string;
   readonly VITE_DEV_DOMAIN?: string;
   readonly VITE_DEV_PORT?: string;
 }
