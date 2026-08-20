@@ -10,6 +10,15 @@ COPY . .
 
 ARG ci_build
 
+# Free-form build-pipeline probe, passed by the release pipeline as an extra
+# --build-arg. ARG alone is not enough: it is substituted into instruction text,
+# but Vite reads process.env, so the value has to be exported into the build
+# process. Vite gives a process.env VITE_* value priority over .env.<mode>, so
+# this overrides the file when the pipeline supplies one and is empty otherwise.
+# Never pass a secret this way - build args are visible in this stage's history.
+ARG VITE_BLOCKS_EXTRA_ARG
+ENV VITE_BLOCKS_EXTRA_ARG=$VITE_BLOCKS_EXTRA_ARG
+
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build:${ci_build}
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
