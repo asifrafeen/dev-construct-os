@@ -220,7 +220,7 @@ export function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
+              <h2 className="text-2xl font-semibold tracking-tight">Welcome back Chief</h2>
               <p className="text-sm text-muted-foreground">Sign in to your Construct OS account.</p>
             </div>
 
