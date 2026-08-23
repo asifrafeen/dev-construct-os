@@ -16,8 +16,8 @@ const ERROR_HELP: Record<string, string> = {
   mfa_enrollment_required: 'This account has to finish multi-factor enrolment before signing in.',
   invalid_mfa_code: 'That verification code is not correct.',
   mfa_session_expired: 'The verification step timed out. Start signing in again.',
-  captcha_enabled: 'This project requires a CAPTCHA, which this app does not render yet.',
-  captcha_invalid: 'The CAPTCHA response was rejected.',
+  captcha_enabled: 'This project requires a CAPTCHA. Complete the challenge below and try again.',
+  captcha_invalid: 'That CAPTCHA response was rejected. Solve the new challenge and try again.',
   // IAM matches federated logins to existing users by email and does not
   // auto-provision — the account has to be invited and activated first.
   user_not_found:

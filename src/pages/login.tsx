@@ -18,6 +18,7 @@ import {
   type SsoProvider,
 } from '@/features/auth/embedded';
 import { authErrorMessage } from '@/features/auth/errors';
+import { Captcha, useCaptcha } from '@/features/auth/captcha-widget';
 import { ProviderButton } from '@/features/auth/provider-button';
 import { startLogin } from '@/features/auth/sso';
 import { ME_KEY, useIsLoggedIn } from '@/features/users/hooks';
@@ -77,6 +78,15 @@ export function LoginPage() {
 
   const issues = configIssues();
 
+  /**
+   * The challenge guards the password form only, and it is shown up front rather
+   * than after a rejection: IAM will not tell us whether *this* account is close to
+   * a lockout without being asked, so waiting for `captcha_enabled` would mean one
+   * wasted round trip on every protected sign-in. The social and hosted buttons hand
+   * off to a provider and never carry a code, so they stay unguarded.
+   */
+  const captcha = useCaptcha();
+
   // Which methods this project has switched on. A failure here is not fatal —
   // the password form still renders, it just cannot list providers.
   const { data: options, isPending: loadingOptions } = useQuery({
@@ -111,12 +121,17 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await loginWithPassword(username, password);
+      await loginWithPassword(username, password, captcha.code || undefined);
       // The cookie now exists; /iam/me is the source of truth for the session.
       await qc.invalidateQueries({ queryKey: ME_KEY });
       navigate('/', { replace: true });
     } catch (e) {
       setError(authErrorMessage(e));
+      // A solved code is single-use, so a retry needs a fresh one whatever the
+      // failure was. This also picks up the site key IAM names when it is the
+      // rejection reason, which is how a project that switched CAPTCHA on since
+      // this page loaded still gets a working challenge.
+      captcha.handleError(e);
     } finally {
       setBusy(false);
     }
@@ -279,11 +294,13 @@ export function LoginPage() {
                 />
               </div>
 
+              {captcha.enabled && <Captcha {...captcha.props} className="flex justify-center" />}
+
               <Button
                 type="submit"
                 size="lg"
                 className="group w-full"
-                disabled={busy || blocked || !!pendingProvider}
+                disabled={busy || blocked || !!pendingProvider || captcha.blocking}
               >
                 {busy ? (
                   <>
@@ -299,9 +316,9 @@ export function LoginPage() {
               </Button>
             </form>
 
-            {error != null && (
+            {(error ?? captcha.loadError) != null && (
               <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                {error}
+                {error ?? captcha.loadError}
               </p>
             )}
 

@@ -3,6 +3,7 @@ import { KeyRound, Loader2, MailCheck } from 'lucide-react';
 import { recoverAccount } from '@/features/auth/api';
 import { authErrorMessage } from '@/features/auth/errors';
 import { AuthScreen } from '@/features/auth/auth-screen';
+import { Captcha, useCaptcha } from '@/features/auth/captcha-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/misc';
 
@@ -12,15 +13,22 @@ export function ForgotPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Renders a challenge only when the project configured one; otherwise the form is
+  // exactly as it was. Recovery is unauthenticated and emails a real person, so it is
+  // the endpoint most worth rate-limiting behind a challenge.
+  const captcha = useCaptcha();
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await recoverAccount(email.trim());
+      await recoverAccount(email.trim(), captcha.code || undefined);
       setSent(true);
     } catch (e) {
       setError(authErrorMessage(e));
+      // The code is spent whether or not IAM accepted it — never offer a replay.
+      captcha.handleError(e);
     } finally {
       setBusy(false);
     }
@@ -42,7 +50,15 @@ export function ForgotPasswordPage() {
         }
         backTo="/login"
       >
-        <Button variant="outline" className="w-full" onClick={() => setSent(false)}>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            setSent(false);
+            // Going round again needs a fresh challenge — the last one is used up.
+            captcha.reset();
+          }}
+        >
           Use a different address
         </Button>
       </AuthScreen>
@@ -74,13 +90,15 @@ export function ForgotPasswordPage() {
           />
         </div>
 
-        {error && (
+        {captcha.enabled && <Captcha {...captcha.props} className="flex justify-center" />}
+
+        {(error ?? captcha.loadError) && (
           <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-            {error}
+            {error ?? captcha.loadError}
           </p>
         )}
 
-        <Button type="submit" className="w-full" disabled={busy}>
+        <Button type="submit" className="w-full" disabled={busy || captcha.blocking}>
           {busy ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />

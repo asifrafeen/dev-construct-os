@@ -10,11 +10,19 @@ import { assertAccountOk, type AccountResponse } from './errors';
  * The emailed link's origin is derived from the Origin/Referer of *this* request when
  * the project has no fixed AccountActionBaseUrl, so it points back at whichever host
  * the user was on.
+ *
+ * `captchaCode` is the code the challenge produced, when the project configured one
+ * — see features/auth/captcha.ts. It is left out entirely rather than sent empty,
+ * because IAM reads its presence as "a challenge was answered".
  */
-export async function recoverAccount(email: string): Promise<void> {
+export async function recoverAccount(email: string, captchaCode?: string): Promise<void> {
   const res = await blocksFetch<AccountResponse>(`${IAM_BASE}/auth/recover`, {
     method: 'POST',
-    body: { email },
+    body: {
+      email,
+      tenantId: BLOCKS.projectKey,
+      ...(captchaCode ? { captchaCode } : {}),
+    },
     noRetry: true,
   });
   // A 200 here still carries `isSuccess: false` for validation failures.

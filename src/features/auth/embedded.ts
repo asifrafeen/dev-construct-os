@@ -61,11 +61,21 @@ export interface AuthFailure {
 /**
  * Username + password. Resolves once the session cookie is set; the caller then
  * re-reads /iam/me rather than trusting anything in this response body.
+ *
+ * `captchaCode` carries the answered challenge when the project configured one —
+ * see features/auth/captcha.ts. Omitted rather than sent empty: IAM treats the field
+ * being present as a claim that a challenge was solved, and rejects a blank one.
+ * Without it a captcha-protected project answers `captcha_enabled`, which the login
+ * page turns back into a challenge.
  */
-export async function loginWithPassword(username: string, password: string): Promise<void> {
+export async function loginWithPassword(
+  username: string,
+  password: string,
+  captchaCode?: string,
+): Promise<void> {
   await blocksFetch(`${IAM_BASE}/auth/login`, {
     method: 'POST',
-    body: { username, password },
+    body: { username, password, ...(captchaCode ? { captchaCode } : {}) },
     noRetry: true, // a 401 here means bad credentials, not an expired session
   });
   // From now on a 401 is renewable rather than terminal — see state/auth-store.
