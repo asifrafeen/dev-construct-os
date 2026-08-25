@@ -159,16 +159,6 @@ export function LoginPage() {
 
   return (
     <>
-      {/* Build-pipeline probe: VITE_BLOCKS_EXTRA_ARG, printed verbatim and
-          deliberately unstyled so it reads the same in either theme. Hidden
-          entirely when the build supplied no value. */}
-        <h1>Extra Arg</h1>
-        {BLOCKS.extraArg && (
-        <h1 style={{ background: '#fff', color: '#000', padding: '8px', textAlign: 'center' }}>
-          {BLOCKS.extraArg}
-        </h1>
-      )}
-
       <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
         {/* ── Brand panel (large screens only) ───────────────────────────── */}
         <aside className="relative hidden overflow-hidden bg-gradient-to-br from-primary via-primary to-secondary p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">

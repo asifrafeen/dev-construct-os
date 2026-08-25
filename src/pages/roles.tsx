@@ -113,7 +113,6 @@ export function RolesPage() {
                       <td className="px-2 py-3">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{r.name || '—'}</span>
-                          {r.createdFromDefault && <Badge tone="muted">Built-in</Badge>}
                           {r.isArchived && <Badge tone="danger">Archived</Badge>}
                         </div>
                         {r.description && (

@@ -20,6 +20,10 @@ export interface Role {
   parentRoleSlug?: string;
   ancestorRoleSlugs?: string[];
   canCreateOwn?: boolean;
+  /**
+   * NOT a "built-in role" flag — the API returns `true` for roles a user just created
+   * through the console too. Don't badge on it.
+   */
   createdFromDefault?: boolean;
   isArchived?: boolean;
   /** Number of users holding the role, as returned by the list endpoint. */
@@ -75,13 +79,19 @@ export interface UpdateRoleInput {
   organizationId?: string;
 }
 
-/** `My Role Name` → `my-role-name`. The API keys roles by slug, not by name. */
+/**
+ * `My Role Name` → `my_role_name`. The API keys roles by slug, not by name.
+ *
+ * Underscores, not hyphens — that is what the Blocks console produces (`Test role org`
+ * → `test_role_org`), and a slug is permanent once created, so matching the platform
+ * convention keeps roles from the two surfaces from looking like different species.
+ */
 export function slugify(name: string): string {
   return name
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
 export const roles = {
@@ -96,10 +106,12 @@ export const roles = {
     const { organizationId, search, slugs, page = 0, pageSize = 20 } = params;
     return blocksFetch<RolesPage>(`${IAM}/roles`, {
       method: 'POST',
+      // Shaped to match a verified-good request: `search` is an empty string rather
+      // than null, and `slugs` is omitted entirely unless actually filtering by it.
       body: {
         page,
         pageSize,
-        filter: { search: search?.trim() || null, slugs: slugs ?? null },
+        filter: { search: search?.trim() ?? '', ...(slugs?.length ? { slugs } : {}) },
         ...(organizationId ? { organizationId } : {}),
       },
     });
@@ -168,7 +180,7 @@ export const roles = {
       body: {
         page,
         pageSize,
-        filter: { search: search?.trim() || null, isArchived: false },
+        filter: { search: search?.trim() ?? '', isArchived: false },
         ...(forRoles?.length ? { roles: forRoles } : {}),
         ...(organizationId ? { organizationId } : {}),
       },
