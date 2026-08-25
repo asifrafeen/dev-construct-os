@@ -1,5 +1,14 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { Blocks, FolderUp, LayoutDashboard, LogOut, Users, UserCircle, Database } from 'lucide-react';
+import {
+  Blocks,
+  Database,
+  FolderUp,
+  LayoutDashboard,
+  LogOut,
+  ShieldCheck,
+  UserCircle,
+  Users,
+} from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
 import { useMe } from '@/features/users/hooks';
 import { useLogout } from '@/features/auth/hooks';
@@ -10,6 +19,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/users', label: 'Users', icon: Users },
+  { to: '/roles', label: 'Roles', icon: ShieldCheck },
   { to: '/data', label: 'Data', icon: Database },
   { to: '/storage', label: 'Storage', icon: FolderUp },
   { to: '/profile', label: 'Profile', icon: UserCircle },

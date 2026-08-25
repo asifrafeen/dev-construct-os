@@ -9,6 +9,7 @@ import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { ResetPasswordPage } from '@/pages/reset-password';
 import { DashboardPage } from '@/pages/dashboard';
 import { UsersPage } from '@/pages/users';
+import { RolesPage } from '@/pages/roles';
 import { ProfilePage } from '@/pages/profile';
 import { StoragePage } from '@/pages/storage';
 import { DataPage } from '@/pages/data';
@@ -39,6 +40,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: 'users', element: <UsersPage /> },
+      { path: 'roles', element: <RolesPage /> },
       { path: 'data', element: <DataPage /> },
       { path: 'storage', element: <StoragePage /> },
       { path: 'profile', element: <ProfilePage /> },
