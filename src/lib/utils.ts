@@ -18,3 +18,12 @@ export function formatDate(value?: string | null) {
     ? '—'
     : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
+
+/** A user's best available label: full name, then email, then a neutral placeholder. */
+export function displayName(user: {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}): string {
+  return [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'this user';
+}

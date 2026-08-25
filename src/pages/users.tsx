@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import type { BlocksUser } from '@/features/users/api';
-import { useAssignUserAccess, useUsers } from '@/features/users/hooks';
-import { useAssignableRoles, useRoles } from '@/features/roles/hooks';
-import { useMyOrgsWithActive } from '@/features/orgs/hooks';
+import { useUsers } from '@/features/users/hooks';
+import { AssignRolesModal } from '@/features/users/assign-roles-modal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
-import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
-import { formatDate, initials } from '@/lib/utils';
+import { displayName, formatDate, initials } from '@/lib/utils';
 
 const PAGE_SIZE = 20;
 
@@ -83,9 +82,12 @@ export function UsersPage() {
                             {initials(u.firstName, u.lastName, u.email?.[0]?.toUpperCase())}
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate font-medium">
+                            <Link
+                              to={`/users/${u.itemId}`}
+                              className="truncate font-medium hover:underline"
+                            >
                               {[u.firstName, u.lastName].filter(Boolean).join(' ') || '—'}
-                            </p>
+                            </Link>
                             <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                           </div>
                         </div>
@@ -112,10 +114,13 @@ export function UsersPage() {
                         {formatDate(u.lastLoggedInTime)}
                       </td>
                       <td className="px-2 py-3">
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-2">
                           <Button variant="outline" size="sm" onClick={() => setAssigning(u)}>
                             <ShieldCheck className="h-4 w-4" />
                             Roles
+                          </Button>
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link to={`/users/${u.itemId}`}>Details</Link>
                           </Button>
                         </div>
                       </td>
@@ -152,164 +157,14 @@ export function UsersPage() {
         </div>
       </div>
 
-      {assigning && <AssignRolesModal user={assigning} onClose={() => setAssigning(null)} />}
-    </div>
-  );
-}
-
-/**
- * Grants roles in the organization the header is currently on.
- *
- * The endpoint *replaces* the user's access rather than appending to it, so the
- * checkbox set is submitted whole — unchecking is how a role is taken away.
- */
-function AssignRolesModal({ user, onClose }: { user: BlocksUser; onClose: () => void }) {
-  const { orgs, activeOrgId } = useMyOrgsWithActive();
-  const activeOrg = orgs.find((o) => o.itemId === activeOrgId);
-
-  const rolesQuery = useRoles({ pageSize: 200 });
-  const { assignableSlugs, isError: assignableFailed } = useAssignableRoles();
-  const assign = useAssignUserAccess();
-
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(user.roles ?? []));
-  const [filter, setFilter] = useState('');
-
-  // A row rendered from a stale list can open with roles that have since changed.
-  useEffect(() => setSelected(new Set(user.roles ?? [])), [user]);
-
-  const available = (rolesQuery.data?.data ?? []).filter((r) => !r.isArchived);
-  const options = available.filter((r) => {
-    if (!filter.trim()) return true;
-    const hay = [r.name, r.slug, r.description].filter(Boolean).join(' ');
-    return hay.toLowerCase().includes(filter.trim().toLowerCase());
-  });
-
-  /**
-   * `roles/assignable` is the admin's own grant ceiling. Gate on it only when it
-   * actually returned something — an empty or failed response must not lock the
-   * whole form, since the server enforces the rule regardless.
-   */
-  const gateOnAssignable = !assignableFailed && assignableSlugs.size > 0;
-  const canGrant = (slug?: string) => !gateOnAssignable || (!!slug && assignableSlugs.has(slug));
-
-  const original = new Set(user.roles ?? []);
-  const dirty =
-    selected.size !== original.size || [...selected].some((s) => !original.has(s));
-
-  const toggle = (slug: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
-      return next;
-    });
-
-  const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'user';
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      className="max-w-2xl"
-      title={`Roles — ${name}`}
-      description={
-        <>
-          Granted in{' '}
-          <span className="font-medium text-foreground">
-            {activeOrg?.name ?? 'the active organization'}
-          </span>
-          . Unchecking a role removes it.
-        </>
-      }
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose} disabled={assign.isPending}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!dirty || assign.isPending}
-            onClick={() =>
-              assign.mutate(
-                { userId: user.itemId, roles: [...selected] },
-                { onSuccess: () => onClose() },
-              )
-            }
-          >
-            {assign.isPending ? 'Saving…' : dirty ? `Save ${selected.size} role(s)` : 'No changes'}
-          </Button>
-        </>
-      }
-    >
-      <Input
-        placeholder="Filter roles…"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-      />
-
-      {rolesQuery.isPending ? (
-        <Spinner label="Loading roles…" />
-      ) : rolesQuery.isError ? (
-        <ErrorNote error={rolesQuery.error} />
-      ) : options.length === 0 ? (
-        <EmptyState
-          title="No roles available"
-          description={
-            filter
-              ? 'Nothing matches your filter.'
-              : 'This organization has no roles yet — create one on the Roles page first.'
-          }
+      {assigning && (
+        <AssignRolesModal
+          userId={assigning.itemId}
+          displayName={displayName(assigning)}
+          currentRoles={assigning.roles ?? []}
+          onClose={() => setAssigning(null)}
         />
-      ) : (
-        <div className="max-h-80 space-y-1 overflow-y-auto rounded-md border p-2">
-          {options.map((r) => {
-            const slug = r.slug ?? '';
-            const grantable = canGrant(r.slug);
-            return (
-              <label
-                key={r.itemId}
-                className={
-                  grantable
-                    ? 'flex cursor-pointer items-start gap-2 rounded-md p-2 text-sm hover:bg-accent'
-                    : 'flex items-start gap-2 rounded-md p-2 text-sm opacity-60'
-                }
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4"
-                  disabled={!grantable || !slug}
-                  checked={selected.has(slug)}
-                  onChange={() => slug && toggle(slug)}
-                />
-                <span className="min-w-0">
-                  <span className="font-medium">{r.name}</span>
-                  <code className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs">{slug}</code>
-                  {!grantable && (
-                    <Badge tone="muted" className="ml-2">
-                      Not yours to grant
-                    </Badge>
-                  )}
-                  {r.description && (
-                    <span className="block text-xs text-muted-foreground">{r.description}</span>
-                  )}
-                </span>
-              </label>
-            );
-          })}
-        </div>
       )}
-
-      {/* Roles held but no longer present in this org's list — surfaced so a save doesn't drop them silently. */}
-      {(user.roles ?? []).some((r) => !available.some((a) => a.slug === r)) && (
-        <p className="text-xs text-muted-foreground">
-          Also holds:{' '}
-          {(user.roles ?? [])
-            .filter((r) => !available.some((a) => a.slug === r))
-            .join(', ')}{' '}
-          — held outside this organization. They are kept as-is when you save.
-        </p>
-      )}
-
-      {assign.isError && <ErrorNote error={assign.error} />}
-    </Modal>
+    </div>
   );
 }

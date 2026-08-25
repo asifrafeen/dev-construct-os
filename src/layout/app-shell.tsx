@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   Blocks,
+  Building2,
   Database,
   FolderUp,
   LayoutDashboard,
@@ -20,6 +21,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/users', label: 'Users', icon: Users },
   { to: '/roles', label: 'Roles', icon: ShieldCheck },
+  { to: '/organizations', label: 'Organizations', icon: Building2 },
   { to: '/data', label: 'Data', icon: Database },
   { to: '/storage', label: 'Storage', icon: FolderUp },
   { to: '/profile', label: 'Profile', icon: UserCircle },
