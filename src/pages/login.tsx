@@ -6,10 +6,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Blocks,
+  Check,
   Database,
   Loader2,
   Lock,
-  MailCheck,
+  RotateCcw,
   ShieldCheck,
   Users,
 } from 'lucide-react';
@@ -23,7 +24,9 @@ import {
   type SsoProvider,
 } from '@/features/auth/embedded';
 import { authErrorCode, authErrorMessage } from '@/features/auth/errors';
+import { isCaptchaError } from '@/features/auth/captcha';
 import { Captcha, useCaptcha } from '@/features/auth/captcha-widget';
+import { useResendCooldown } from '@/features/auth/use-resend-cooldown';
 import { ProviderButton } from '@/features/auth/provider-button';
 import { startLogin } from '@/features/auth/sso';
 import { ME_KEY, useIsLoggedIn } from '@/features/users/hooks';
@@ -100,6 +103,10 @@ export function LoginPage() {
    */
   const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
   const [mfaCode, setMfaCode] = useState('');
+  /** Confirmation that a new code went out — cleared by the next action. */
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const resendCooldown = useResendCooldown();
 
   const issues = configIssues();
 
@@ -151,6 +158,9 @@ export function LoginPage() {
         // Credentials were fine — there is simply no cookie until the code lands.
         setChallenge(result.challenge);
         setMfaCode('');
+        setNotice(null);
+        // This attempt *is* the first send, so the resend button starts cold.
+        resendCooldown.start();
         return;
       }
       // The cookie now exists; /iam/me is the source of truth for the session.
@@ -196,11 +206,52 @@ export function LoginPage() {
     }
   }
 
+  /**
+   * Send another code.
+   *
+   * Not `mfa/resend` — that endpoint is [Authorize]d and there is no session until the
+   * code is accepted, so it answers 401 at this point in the flow (verified against
+   * dev IAM with a live mfa_id). Replaying the password leg is what IAM actually
+   * offers here: it mints a fresh mfa_id, mails a new code, and retires nothing we
+   * still need. The password is already in state from the form above.
+   */
+  async function onResendMfa() {
+    if (!challenge || resendCooldown.remaining > 0) return;
+    setResending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await loginWithPassword(username, password, captcha.code || undefined);
+      if (result.status === 'mfa-required') {
+        setChallenge(result.challenge);
+        setMfaCode('');
+        setNotice('A new code is on its way.');
+        resendCooldown.start();
+        return;
+      }
+      // MFA was switched off between the two calls: the replay signed us straight in.
+      await qc.invalidateQueries({ queryKey: ME_KEY });
+      navigate('/', { replace: true });
+    } catch (e) {
+      setError(authErrorMessage(e));
+      // A spent or newly-demanded challenge can only be answered on the password
+      // form, so that is where the user has to go back to.
+      if (isCaptchaError(e)) {
+        setChallenge(null);
+        captcha.handleError(e);
+      }
+    } finally {
+      setResending(false);
+    }
+  }
+
   /** Abandon the challenge. Re-submitting the form mints a new id and a new code. */
   function onCancelMfa() {
     setChallenge(null);
     setMfaCode('');
     setError(null);
+    setNotice(null);
+    resendCooldown.clear();
     // The solved challenge from the first leg is spent, so the retry needs a new one.
     captcha.reset();
   }
@@ -328,7 +379,7 @@ export function LoginPage() {
                       className="text-center text-lg tracking-[0.4em]"
                       value={mfaCode}
                       onChange={(e) => setMfaCode(e.target.value.replace(/\s/g, ''))}
-                      disabled={busy}
+                      disabled={busy || resending}
                     />
                   </div>
 
@@ -336,7 +387,7 @@ export function LoginPage() {
                     type="submit"
                     size="lg"
                     className="group w-full"
-                    disabled={busy || mfaCode.trim().length === 0}
+                    disabled={busy || resending || mfaCode.trim().length === 0}
                   >
                     {busy ? (
                       <>
@@ -358,15 +409,42 @@ export function LoginPage() {
                   </p>
                 )}
 
-                <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  <MailCheck className="h-3.5 w-3.5 shrink-0" />
-                  No code yet? Start over to have a new one sent.
-                </p>
+                {notice != null && (
+                  <p className="mt-4 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400">
+                    <Check className="h-4 w-4 shrink-0" />
+                    {notice}
+                  </p>
+                )}
+
+                <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  <span>No code yet?</span>
+                  {captcha.enabled ? (
+                    // Resending replays the password leg, and that needs a CAPTCHA
+                    // answer — the one from a moment ago is spent. So on a protected
+                    // project the only honest offer is a trip back to the form.
+                    <span>Start over to have a new one sent.</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onResendMfa}
+                      disabled={busy || resending || resendCooldown.remaining > 0}
+                      className="inline-flex items-center gap-1.5 font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline disabled:pointer-events-none disabled:font-normal disabled:text-muted-foreground"
+                    >
+                      {resending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      )}
+                      {resending ? 'Sending…' : 'Send a new code'}
+                      {resendCooldown.label && ` (${resendCooldown.label})`}
+                    </button>
+                  )}
+                </div>
 
                 <button
                   type="button"
                   onClick={onCancelMfa}
-                  disabled={busy}
+                  disabled={busy || resending}
                   className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMe, useUpdateMe } from '@/features/users/hooks';
+import { MfaCard } from '@/features/auth/mfa-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorNote, Input, Spinner } from '@/components/ui/misc';
@@ -27,7 +28,9 @@ export function ProfilePage() {
     <div className="max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
-        <p className="text-sm text-muted-foreground">PATCH /iam/v4/iam/me</p>
+        <p className="text-sm text-muted-foreground">
+          PATCH /iam/v4/iam/me · POST /iam/v4/mfa/*
+        </p>
       </div>
 
       <Card>
@@ -77,6 +80,8 @@ export function ProfilePage() {
           </form>
         </CardContent>
       </Card>
+
+      <MfaCard me={me} />
     </div>
   );
 }

@@ -16,6 +16,9 @@ export interface Me {
   status: number;
   isVerified: boolean;
   mfaEnabled: boolean;
+  /** False between enrolling and proving the channel — see features/auth/mfa.ts. */
+  isMfaVerified: boolean;
+  /** UserMfaType: 0 none, 1 TOTP, 2 email, 3 SMS, 4 WhatsApp. */
   userMfaType: number;
   attributes: Record<string, unknown>;
   logInCount: number;
