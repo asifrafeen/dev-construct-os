@@ -1,15 +1,20 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ShieldCheck } from 'lucide-react';
+import type { BlocksUser } from '@/features/users/api';
 import { useUsers } from '@/features/users/hooks';
+import { AssignRolesModal } from '@/features/users/assign-roles-modal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
-import { formatDate, initials } from '@/lib/utils';
+import { displayName, formatDate, initials } from '@/lib/utils';
 
 const PAGE_SIZE = 20;
 
 export function UsersPage() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
+  const [assigning, setAssigning] = useState<BlocksUser | null>(null);
   const { data, isPending, isError, error } = useUsers({}, page, PAGE_SIZE);
 
   const rows = (data?.data ?? []).filter((u) => {
@@ -65,6 +70,7 @@ export function UsersPage() {
                     <th className="px-2 py-2 font-medium">Status</th>
                     <th className="px-2 py-2 font-medium">Roles</th>
                     <th className="px-2 py-2 font-medium">Last login</th>
+                    <th className="px-2 py-2 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -76,9 +82,12 @@ export function UsersPage() {
                             {initials(u.firstName, u.lastName, u.email?.[0]?.toUpperCase())}
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate font-medium">
+                            <Link
+                              to={`/users/${u.itemId}`}
+                              className="truncate font-medium hover:underline"
+                            >
                               {[u.firstName, u.lastName].filter(Boolean).join(' ') || '—'}
-                            </p>
+                            </Link>
                             <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                           </div>
                         </div>
@@ -104,6 +113,17 @@ export function UsersPage() {
                       <td className="px-2 py-3 text-muted-foreground">
                         {formatDate(u.lastLoggedInTime)}
                       </td>
+                      <td className="px-2 py-3">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setAssigning(u)}>
+                            <ShieldCheck className="h-4 w-4" />
+                            Roles
+                          </Button>
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link to={`/users/${u.itemId}`}>Details</Link>
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -118,7 +138,12 @@ export function UsersPage() {
           Page {page + 1} of {lastPage + 1}
         </span>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === 0}
+            onClick={() => setPage((p) => p - 1)}
+          >
             Previous
           </Button>
           <Button
@@ -131,6 +156,15 @@ export function UsersPage() {
           </Button>
         </div>
       </div>
+
+      {assigning && (
+        <AssignRolesModal
+          userId={assigning.itemId}
+          displayName={displayName(assigning)}
+          currentRoles={assigning.roles ?? []}
+          onClose={() => setAssigning(null)}
+        />
+      )}
     </div>
   );
 }

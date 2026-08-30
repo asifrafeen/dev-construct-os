@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { orgs } from './api';
+import { orgs, type CreateOrgInput, type ListOrgsParams, type Organization } from './api';
 
 interface ActiveOrgState {
   activeOrgId: string | null;
@@ -37,6 +37,44 @@ export function useMyOrgsWithActive() {
   }, [list, activeOrgId, setActiveOrg]);
 
   return { ...query, orgs: list, activeOrgId, setActiveOrg };
+}
+
+/** Every organization in the project, not just the ones the caller belongs to. */
+export const useOrgs = (params: ListOrgsParams = {}) =>
+  useQuery({
+    queryKey: ['iam', 'orgs', 'list', params],
+    queryFn: () => orgs.list(params),
+  });
+
+export const useOrg = (id: string | undefined) =>
+  useQuery({
+    queryKey: ['iam', 'orgs', 'one', id],
+    queryFn: () => orgs.get(id as string),
+    enabled: !!id,
+    select: (r) => r.organization ?? null,
+  });
+
+function useOrgsInvalidator() {
+  const qc = useQueryClient();
+  // `my` matters too: creating an org usually adds the creator to it, and the header's
+  // switcher reads that list.
+  return () => qc.invalidateQueries({ queryKey: ['iam', 'orgs'] });
+}
+
+export function useCreateOrg() {
+  const invalidate = useOrgsInvalidator();
+  return useMutation({
+    mutationFn: (input: CreateOrgInput) => orgs.create(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateOrg() {
+  const invalidate = useOrgsInvalidator();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Partial<Organization>) => orgs.update(id, body),
+    onSuccess: invalidate,
+  });
 }
 
 export const useOrgConfig = () =>

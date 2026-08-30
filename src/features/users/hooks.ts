@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useActiveOrg } from '@/features/orgs/hooks';
 import { users } from './api';
 
 export const ME_KEY = ['iam', 'me'] as const;
@@ -39,18 +40,46 @@ export const useUserTimeline = (userId: string | undefined) =>
     enabled: !!userId,
   });
 
+/**
+ * Grants roles (and optionally permissions) in the organization the UI is currently
+ * showing. The call replaces the user's access in that org, so pass the complete
+ * intended role set, not just the additions.
+ */
 export function useAssignUserAccess() {
   const qc = useQueryClient();
+  const { activeOrgId } = useActiveOrg();
   return useMutation({
     mutationFn: ({
       userId,
       roles,
       permissions,
+      organizationId,
     }: {
       userId: string;
       roles: string[];
       permissions?: string[];
-    }) => users.assign(userId, roles, permissions ?? []),
+      /** Defaults to the active org; pass explicitly to target another one. */
+      organizationId?: string | null;
+    }) =>
+      users.assign(
+        userId,
+        roles,
+        permissions ?? [],
+        organizationId !== undefined ? organizationId : activeOrgId,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['iam', 'users'] });
+      qc.invalidateQueries({ queryKey: ME_KEY });
+    },
+  });
+}
+
+export function useRevokeUserAccess() {
+  const qc = useQueryClient();
+  const { activeOrgId } = useActiveOrg();
+  return useMutation({
+    mutationFn: ({ userId, organizationId }: { userId: string; organizationId?: string | null }) =>
+      users.revokeAccess(userId, organizationId !== undefined ? organizationId : activeOrgId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['iam', 'users'] }),
   });
 }

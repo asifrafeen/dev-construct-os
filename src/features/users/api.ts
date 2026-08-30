@@ -67,7 +67,7 @@ export const users = {
   patchMe: (body: Record<string, unknown>) =>
     blocksFetch<unknown>(`${IAM}/me`, { method: 'PATCH', body }),
 
-  /** Lists are POST, not GET. */
+  /** Lists are POST, not GET. Org scoping rides in `filter.organizationIds`. */
   list: (body: Record<string, unknown> = {}) =>
     blocksFetch<Paged<BlocksUser>>(`${IAM}/users`, {
       method: 'POST',
@@ -89,11 +89,31 @@ export const users = {
   update: (id: string, body: Record<string, unknown>) =>
     blocksFetch<unknown>(`${IAM}/users/${id}`, { method: 'POST', body: { ...body, itemId: id } }),
 
-  /** Roles by slug, permissions by name — not part of a profile update. */
-  assign: (userId: string, roles: string[], permissions: string[] = []) =>
-    blocksFetch<unknown>(`${IAM}/users/roles-and-permissions`, {
+  /**
+   * Roles by slug, permissions by name — not part of a profile update.
+   *
+   * `organizationId` scopes the grant: the same user can hold different roles in each
+   * organization they belong to, so omitting it grants against the caller's default org
+   * rather than the one the UI is showing.
+   *
+   * This is a *replace*, not an append — send the user's full intended role set.
+   */
+  assign: (
+    userId: string,
+    roles: string[],
+    permissions: string[] = [],
+    organizationId?: string | null,
+  ) =>
+    blocksFetch<unknown>(`${IAM}/users/access`, {
       method: 'POST',
-      body: { userId, roles, permissions },
+      body: { userId, roles, permissions, ...(organizationId ? { organizationId } : {}) },
+    }),
+
+  /** Drops every role and permission the user holds in that organization. */
+  revokeAccess: (userId: string, organizationId?: string | null) =>
+    blocksFetch<unknown>(`${IAM}/users/revoke-access`, {
+      method: 'POST',
+      body: { userId, ...(organizationId ? { organizationId } : {}) },
     }),
 
   deactivate: (userId: string) =>
