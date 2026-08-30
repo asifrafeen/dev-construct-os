@@ -53,14 +53,81 @@ export interface AuthFailure {
   error?: string;
   error_description?: string;
   redirect_url?: string | null;
-  /** Present when the account has MFA switched on. */
+  /** True when the credentials were right but a second factor is still owed. */
+  mfa_required?: boolean;
+  /** Present when the account has MFA switched on — the handle for the second leg. */
   mfa_id?: string;
-  mfa_type?: string;
+  /** Numeric in the payload (2 = email); the string form is tolerated as well. */
+  mfa_type?: number | string;
+  /** Human-readable channel list, e.g. "Email". */
+  mfa_methods?: string;
 }
 
 /**
- * Username + password. Resolves once the session cookie is set; the caller then
- * re-reads /iam/me rather than trusting anything in this response body.
+ * A second factor IAM is waiting on. Credentials were accepted; the session cookie
+ * is NOT set yet and only appears once the code comes back verified.
+ */
+export interface MfaChallenge {
+  /** Identifies this attempt. Single-use: a new sign-in mints a new one and a new code. */
+  mfaId: string;
+  /** 2 = email, as IAM numbers them. Null when the payload left it out. */
+  type: number | null;
+  /** Where the code went, in IAM's own words ("Email"). Empty when unreported. */
+  methods: string;
+}
+
+export type LoginResult =
+  | { status: 'signed-in' }
+  | { status: 'mfa-required'; challenge: MfaChallenge };
+
+/** Bodies arrive parsed, or as text when the response carried no JSON content type. */
+function asPayload(body: unknown): AuthFailure | null {
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body) as AuthFailure;
+    } catch {
+      return null;
+    }
+  }
+  return body && typeof body === 'object' ? (body as AuthFailure) : null;
+}
+
+/**
+ * Reads an MFA challenge out of a login response, whichever way IAM framed it.
+ *
+ * The body is error-*shaped* (`error: "mfa_enabled"`) but it is not a failure — the
+ * password was accepted and IAM is asking for the second leg. It currently arrives
+ * with HTTP 200, which is why this is checked on the resolved value and not only in
+ * a catch. `mfa_id` is what makes the answer actionable: without one there is nothing
+ * to continue with, so it really is just an error.
+ */
+export function mfaChallenge(body: unknown): MfaChallenge | null {
+  const payload = asPayload(body);
+  if (!payload?.mfa_id) return null;
+  if (!payload.mfa_required && payload.error !== 'mfa_enabled') return null;
+
+  const type = Number(payload.mfa_type);
+  return {
+    mfaId: payload.mfa_id,
+    type: Number.isFinite(type) ? type : null,
+    methods: payload.mfa_methods ?? '',
+  };
+}
+
+/**
+ * Same read, for something thrown by `blocksFetch`. A rejected code comes back as a
+ * plain `invalid_mfa_code` today, with the id still good for another attempt — this
+ * is here so that a future IAM that *does* rotate the id on rejection updates the
+ * caller's handle instead of stranding it on a retired one.
+ */
+export function mfaChallengeFromError(error: unknown): MfaChallenge | null {
+  return error instanceof BlocksError ? mfaChallenge(error.body) : null;
+}
+
+/**
+ * Username + password. Resolves either with the session cookie set, or with the MFA
+ * challenge IAM wants answered first — see submitMfaCode for that second leg. The
+ * caller re-reads /iam/me rather than trusting anything in this response body.
  *
  * `captchaCode` carries the answered challenge when the project configured one —
  * see features/auth/captcha.ts. Omitted rather than sent empty: IAM treats the field
@@ -72,13 +139,54 @@ export async function loginWithPassword(
   username: string,
   password: string,
   captchaCode?: string,
-): Promise<void> {
+): Promise<LoginResult> {
+  try {
+    const res = await blocksFetch<unknown>(`${IAM_BASE}/auth/login`, {
+      method: 'POST',
+      body: { username, password, ...(captchaCode ? { captchaCode } : {}) },
+      noRetry: true, // a 401 here means bad credentials, not an expired session
+    });
+    // An MFA account answers with a challenge, not a session. IAM sends it as a 200
+    // with an error-shaped body, so it lands here rather than in the catch — which
+    // stays anyway, so a 4xx framing of the same thing is not read as a failure.
+    const challenge = mfaChallenge(res);
+    if (challenge) return { status: 'mfa-required', challenge };
+  } catch (error) {
+    const challenge = mfaChallengeFromError(error);
+    if (challenge) return { status: 'mfa-required', challenge };
+    throw error;
+  }
+
+  // From now on a 401 is renewable rather than terminal — see state/auth-store.
+  markSignedIn();
+  return { status: 'signed-in' };
+}
+
+/**
+ * Second leg: hand the emailed/authenticator code back and finish the sign-in.
+ *
+ * Same endpoint as the password leg — `mfa_id` is what tells IAM which half of the
+ * flow this is, so no username or password is repeated. The hosted login page posts
+ * the same thing to its own `/api/oidc/login`; this is the direct equivalent.
+ *
+ * All three of `mfa_id`, `mfa_code` and `mfa_type` are mandatory — leaving the type
+ * out is a 400 `invalid_request`, not a defaulted 2. It is echoed straight back from
+ * the challenge rather than assumed, so an account on some other factor still works.
+ *
+ * The tenant deliberately does NOT go in the body: `x-blocks-key` already carries it
+ * on every call (see lib/blocks-client), and a second copy in the payload is one more
+ * place for the two to disagree.
+ */
+export async function submitMfaCode(challenge: MfaChallenge, mfaCode: string): Promise<void> {
   await blocksFetch(`${IAM_BASE}/auth/login`, {
     method: 'POST',
-    body: { username, password, ...(captchaCode ? { captchaCode } : {}) },
-    noRetry: true, // a 401 here means bad credentials, not an expired session
+    body: {
+      mfa_id: challenge.mfaId,
+      mfa_code: mfaCode,
+      ...(challenge.type === null ? {} : { mfa_type: challenge.type }),
+    },
+    noRetry: true, // a 401 is a wrong code, not an expired session
   });
-  // From now on a 401 is renewable rather than terminal — see state/auth-store.
   markSignedIn();
 }
 

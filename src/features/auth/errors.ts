@@ -12,7 +12,7 @@ const ERROR_HELP: Record<string, string> = {
     'This account is temporarily locked after too many failed attempts. Wait a few minutes and try again.',
   user_inactive_or_not_verified:
     'That account is not active yet. Check your inbox for the activation email.',
-  mfa_enabled: 'This account requires a second factor, which this app does not collect yet.',
+  mfa_enabled: 'This account needs a verification code. Enter the one that was just sent to you.',
   mfa_enrollment_required: 'This account has to finish multi-factor enrolment before signing in.',
   invalid_mfa_code: 'That verification code is not correct.',
   mfa_session_expired: 'The verification step timed out. Start signing in again.',
@@ -82,6 +82,24 @@ export function authErrorMessage(error: unknown): string {
   if (error instanceof BlocksError) return describeAuthError(error.status, error.body);
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/**
+ * The bare `error` code, for the few cases where the caller has to *branch* rather
+ * than just print — an expired MFA session has to send the user back to the password
+ * form, where a wrong code only needs the message.
+ */
+export function authErrorCode(error: unknown): string {
+  if (!(error instanceof BlocksError)) return '';
+  const body = error.body;
+  if (typeof body === 'string') {
+    try {
+      return (JSON.parse(body) as { error?: string }).error ?? '';
+    } catch {
+      return '';
+    }
+  }
+  return body && typeof body === 'object' ? ((body as { error?: string }).error ?? '') : '';
 }
 
 /**

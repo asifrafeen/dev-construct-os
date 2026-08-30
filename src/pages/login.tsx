@@ -3,21 +3,26 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   Blocks,
   Database,
   Loader2,
   Lock,
+  MailCheck,
   ShieldCheck,
   Users,
 } from 'lucide-react';
 import {
   getLoginOptions,
   loginWithPassword,
+  mfaChallengeFromError,
   startSocialLogin,
+  submitMfaCode,
+  type MfaChallenge,
   type SsoProvider,
 } from '@/features/auth/embedded';
-import { authErrorMessage } from '@/features/auth/errors';
+import { authErrorCode, authErrorMessage } from '@/features/auth/errors';
 import { Captcha, useCaptcha } from '@/features/auth/captcha-widget';
 import { ProviderButton } from '@/features/auth/provider-button';
 import { startLogin } from '@/features/auth/sso';
@@ -40,6 +45,17 @@ import { ThemeToggle } from '@/components/theme-toggle';
 
 /** pendingProvider marker for the hosted flow — never collides with a provider name. */
 const HOSTED = '__blocks_hosted__';
+
+/**
+ * Where an MFA code was sent, phrased for a sentence. IAM reports the channel as
+ * "Email" (mfa_type 2); anything else it grows later is printed as-is rather than
+ * guessed at.
+ */
+function mfaDestination(challenge: MfaChallenge): string {
+  const named = challenge.methods.trim();
+  if (named) return named.toLowerCase() === 'email' ? 'your email' : named;
+  return challenge.type === 2 ? 'your email' : 'your registered device';
+}
 
 const HIGHLIGHTS = [
   {
@@ -75,6 +91,15 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<string | null>(null);
+
+  /**
+   * Set once the password is accepted but IAM still wants a code. It swaps the form
+   * for the code entry rather than routing anywhere: the challenge only lives in this
+   * component, so a reload has to start the sign-in over — which is also the only way
+   * to get a fresh code, since a new attempt is what mints one.
+   */
+  const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
 
   const issues = configIssues();
 
@@ -121,7 +146,13 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await loginWithPassword(username, password, captcha.code || undefined);
+      const result = await loginWithPassword(username, password, captcha.code || undefined);
+      if (result.status === 'mfa-required') {
+        // Credentials were fine — there is simply no cookie until the code lands.
+        setChallenge(result.challenge);
+        setMfaCode('');
+        return;
+      }
       // The cookie now exists; /iam/me is the source of truth for the session.
       await qc.invalidateQueries({ queryKey: ME_KEY });
       navigate('/', { replace: true });
@@ -135,6 +166,43 @@ export function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Second leg: the code goes back with the mfa_id, and that is what sets the cookie. */
+  async function onVerifyMfa(event: FormEvent) {
+    event.preventDefault();
+    if (!challenge) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await submitMfaCode(challenge, mfaCode.trim());
+      await qc.invalidateQueries({ queryKey: ME_KEY });
+      navigate('/', { replace: true });
+    } catch (e) {
+      setError(authErrorMessage(e));
+      setMfaCode('');
+      // A timed-out challenge cannot be retried — the whole sign-in starts again.
+      if (authErrorCode(e) === 'mfa_session_expired') {
+        setChallenge(null);
+        captcha.reset();
+        return;
+      }
+      // The id survives a wrong code today, so the user simply retypes. This picks up
+      // a replacement if IAM ever starts issuing one, instead of retrying a dead id.
+      const next = mfaChallengeFromError(e);
+      if (next) setChallenge(next);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Abandon the challenge. Re-submitting the form mints a new id and a new code. */
+  function onCancelMfa() {
+    setChallenge(null);
+    setMfaCode('');
+    setError(null);
+    // The solved challenge from the first leg is spent, so the retry needs a new one.
+    captcha.reset();
   }
 
   function onProvider(provider: SsoProvider) {
@@ -224,145 +292,230 @@ export function LoginPage() {
               <span className="text-lg font-semibold tracking-tight">Construct OS</span>
             </div>
 
-            <div className="space-y-2">
-              <h2 className="text-2xl font-semibold tracking-tight">Welcome back Chief</h2>
-              <p className="text-sm text-muted-foreground">Sign in to your Construct OS account.</p>
-            </div>
-
-            {blocked && (
-              <div className="mt-6 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
-                <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  Configuration needed
-                </p>
-                <ul className="list-inside list-disc space-y-1 text-muted-foreground">
-                  {issues.map((i) => (
-                    <li key={i}>{i}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-              <div className="space-y-2">
-                <label htmlFor="username" className="text-sm font-medium">
-                  Email
-                </label>
-                <Input
-                  id="username"
-                  type="email"
-                  autoComplete="username"
-                  required
-                  placeholder="you@company.com"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  disabled={busy || blocked}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <label htmlFor="password" className="text-sm font-medium">
-                    Password
-                  </label>
-                  <Link
-                    to="/forgot-password"
-                    className="text-xs text-muted-foreground transition-colors hover:text-primary"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={busy || blocked}
-                />
-              </div>
-
-              {captcha.enabled && <Captcha {...captcha.props} className="flex justify-center" />}
-
-              <Button
-                type="submit"
-                size="lg"
-                className="group w-full"
-                disabled={busy || blocked || !!pendingProvider || captcha.blocking}
-              >
-                {busy ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Signing in…
-                  </>
-                ) : (
-                  <>
-                    Sign in
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </>
-                )}
-              </Button>
-            </form>
-
-            {(error ?? captcha.loadError) != null && (
-              <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                {error ?? captcha.loadError}
-              </p>
-            )}
-
-            {(providers.length > 0 || hostedLogin) && (
+            {challenge ? (
               <>
-                <div className="mt-8 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                    or continue with
-                  </span>
-                  <span className="h-px flex-1 bg-border" />
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-semibold tracking-tight">Two-step verification</h2>
+                  <p className="text-sm text-muted-foreground">
+                    We sent a verification code to {mfaDestination(challenge)}. Enter it below to
+                    finish signing in
+                    {username ? (
+                      <>
+                        {' '}
+                        as <span className="font-medium text-foreground">{username}</span>
+                      </>
+                    ) : null}
+                    .
+                  </p>
                 </div>
 
-                {providers.length > 0 && (
-                  <div
-                    className={`mt-4 grid gap-2 ${providers.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
-                  >
-                    {providers.map((p) => (
-                      <ProviderButton
-                        key={p.provider}
-                        provider={p}
-                        busy={pendingProvider === p.provider}
-                        disabled={busy || blocked || !!pendingProvider}
-                        compact={providers.length > 2}
-                        onSelect={onProvider}
-                      />
-                    ))}
+                <form className="mt-6 space-y-4" onSubmit={onVerifyMfa}>
+                  <div className="space-y-2">
+                    <label htmlFor="mfa-code" className="text-sm font-medium">
+                      Verification code
+                    </label>
+                    <Input
+                      id="mfa-code"
+                      // A code is digits today, but IAM decides its shape — `text` with a
+                      // numeric keypad hint keeps a future alphanumeric one typable.
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      // Lets the browser and password managers fill it the moment it lands.
+                      autoFocus
+                      required
+                      placeholder="123456"
+                      className="text-center text-lg tracking-[0.4em]"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\s/g, ''))}
+                      disabled={busy}
+                    />
                   </div>
-                )}
 
-                {hostedLogin && (
                   <Button
-                    type="button"
-                    variant="outline"
-                    className={`w-full ${providers.length > 0 ? 'mt-2' : 'mt-4'}`}
-                    disabled={busy || blocked || !!pendingProvider}
-                    onClick={onHostedLogin}
+                    type="submit"
+                    size="lg"
+                    className="group w-full"
+                    disabled={busy || mfaCode.trim().length === 0}
                   >
-                    <Blocks className="h-4 w-4 text-primary" />
-                    <span>
-                      {pendingProvider === HOSTED
-                        ? 'Redirecting to SELISE Blocks…'
-                        : 'SELISE Blocks'}
-                    </span>
+                    {busy ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Verifying…
+                      </>
+                    ) : (
+                      <>
+                        Verify and sign in
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </>
+                    )}
                   </Button>
-                )}
-              </>
-            )}
+                </form>
 
-            {loadingOptions && (
-              <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading sign-in options…
-              </p>
+                {error != null && (
+                  <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+
+                <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  <MailCheck className="h-3.5 w-3.5 shrink-0" />
+                  No code yet? Start over to have a new one sent.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={onCancelMfa}
+                  disabled={busy}
+                  className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to sign in
+                </button>
+              </>
+            ) : (
+              <>
+              <div className="space-y-2">
+                <h2 className="text-2xl font-semibold tracking-tight">Welcome back Chief</h2>
+                <p className="text-sm text-muted-foreground">Sign in to your Construct OS account.</p>
+              </div>
+
+              {blocked && (
+                <div className="mt-6 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+                  <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Configuration needed
+                  </p>
+                  <ul className="list-inside list-disc space-y-1 text-muted-foreground">
+                    {issues.map((i) => (
+                      <li key={i}>{i}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+                <div className="space-y-2">
+                  <label htmlFor="username" className="text-sm font-medium">
+                    Email
+                  </label>
+                  <Input
+                    id="username"
+                    type="email"
+                    autoComplete="username"
+                    required
+                    placeholder="you@company.com"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={busy || blocked}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <label htmlFor="password" className="text-sm font-medium">
+                      Password
+                    </label>
+                    <Link
+                      to="/forgot-password"
+                      className="text-xs text-muted-foreground transition-colors hover:text-primary"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={busy || blocked}
+                  />
+                </div>
+
+                {captcha.enabled && <Captcha {...captcha.props} className="flex justify-center" />}
+
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="group w-full"
+                  disabled={busy || blocked || !!pendingProvider || captcha.blocking}
+                >
+                  {busy ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Signing in…
+                    </>
+                  ) : (
+                    <>
+                      Sign in
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </>
+                  )}
+                </Button>
+              </form>
+
+              {(error ?? captcha.loadError) != null && (
+                <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                  {error ?? captcha.loadError}
+                </p>
+              )}
+
+              {(providers.length > 0 || hostedLogin) && (
+                <>
+                  <div className="mt-8 flex items-center gap-3">
+                    <span className="h-px flex-1 bg-border" />
+                    <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                      or continue with
+                    </span>
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+
+                  {providers.length > 0 && (
+                    <div
+                      className={`mt-4 grid gap-2 ${providers.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+                    >
+                      {providers.map((p) => (
+                        <ProviderButton
+                          key={p.provider}
+                          provider={p}
+                          busy={pendingProvider === p.provider}
+                          disabled={busy || blocked || !!pendingProvider}
+                          compact={providers.length > 2}
+                          onSelect={onProvider}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {hostedLogin && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={`w-full ${providers.length > 0 ? 'mt-2' : 'mt-4'}`}
+                      disabled={busy || blocked || !!pendingProvider}
+                      onClick={onHostedLogin}
+                    >
+                      <Blocks className="h-4 w-4 text-primary" />
+                      <span>
+                        {pendingProvider === HOSTED
+                          ? 'Redirecting to SELISE Blocks…'
+                          : 'SELISE Blocks'}
+                      </span>
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {loadingOptions && (
+                <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading sign-in options…
+                </p>
+              )}
+              </>
             )}
 
             <p className="mt-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
