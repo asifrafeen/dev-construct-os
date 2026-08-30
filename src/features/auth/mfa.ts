@@ -72,16 +72,26 @@ export async function startEmailMfaEnrolment(): Promise<string> {
 }
 
 /**
- * Send another code for an enrolment already in progress. IAM mints a *new* mfaId
- * and retires the old one, so the caller has to keep the returned id.
+ * Send another code for a challenge already in flight. The request carries the mfaId
+ * we already hold, and the caller goes on using that same id afterwards — matching
+ * how the Blocks-hosted login page drives this endpoint.
+ *
+ * The response does contain an id, and it is deliberately ignored. Worth knowing what
+ * that costs: `ResendOtpAsync` looks our id up only to read the user off it, then
+ * hands to `GenerateOTPAsync`, which stores a *new* code under a *new* GUID. Our entry
+ * is left alone rather than deleted, so the code from the first mail keeps working for
+ * its five minutes — but the freshly mailed one is bound to the id we threw away, and
+ * verifying it against ours reads the older code and answers invalid_two_factor_code.
+ *
+ * Used by both MFA screens. Note that IAM guards this with `[Authorize]`: on the login
+ * step, where the session cookie does not exist until a code is accepted, it answers
+ * 401 with `www-authenticate: Bearer`. The caller needs an answer ready for that.
  */
-export async function resendMfaCode(mfaId: string): Promise<string> {
-  const res = await blocksFetch<{ mfaId?: string }>(`${MFA}/resend`, {
+export async function resendMfaCode(mfaId: string): Promise<void> {
+  await blocksFetch<{ mfaId?: string }>(`${MFA}/resend`, {
     method: 'POST',
     body: { mfaId },
   });
-  if (!res.mfaId) throw new Error('IAM accepted the request but returned no mfaId.');
-  return res.mfaId;
 }
 
 /**
@@ -140,6 +150,24 @@ function bodyOf(error: unknown): Record<string, unknown> | null {
     }
   }
   return body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+}
+
+/**
+ * The bare error code, for callers that have to branch on it rather than print it —
+ * a resend that fails on `invalid_two_factor_id` needs different advice from one
+ * that fails on a wrong code.
+ */
+export function mfaErrorCode(error: unknown): string {
+  const body = bodyOf(error);
+  const errors = body?.errors;
+
+  if (errors && typeof errors === 'object') {
+    for (const [key, value] of Object.entries(errors as Record<string, unknown>)) {
+      if (key in MFA_ERROR_HELP) return key;
+      if (String(value) in MFA_ERROR_HELP) return String(value);
+    }
+  }
+  return typeof body?.error === 'string' ? body.error : '';
 }
 
 /** Readable sentence for anything these endpoints throw. */

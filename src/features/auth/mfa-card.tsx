@@ -85,9 +85,8 @@ export function MfaCard({ me }: { me: Me }) {
     setDialogError(null);
     setCode('');
     try {
-      // The replacement id retires the one we hold — keeping the old one would
-      // verify a code the user can no longer be sent.
-      setMfaId(await resend.mutateAsync(mfaId));
+      // The enrolment keeps the id it already has — see resendMfaCode.
+      await resend.mutateAsync(mfaId);
       cooldown.start();
     } catch (e) {
       setDialogError(mfaErrorMessage(e));

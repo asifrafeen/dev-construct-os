@@ -24,12 +24,13 @@ import {
   type SsoProvider,
 } from '@/features/auth/embedded';
 import { authErrorCode, authErrorMessage } from '@/features/auth/errors';
-import { isCaptchaError } from '@/features/auth/captcha';
 import { Captcha, useCaptcha } from '@/features/auth/captcha-widget';
+import { mfaErrorCode, mfaErrorMessage, resendMfaCode } from '@/features/auth/mfa';
 import { useResendCooldown } from '@/features/auth/use-resend-cooldown';
 import { ProviderButton } from '@/features/auth/provider-button';
 import { startLogin } from '@/features/auth/sso';
 import { ME_KEY, useIsLoggedIn } from '@/features/users/hooks';
+import { UnauthorizedError } from '@/lib/blocks-client';
 import { BLOCKS, configIssues } from '@/lib/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/misc';
@@ -207,13 +208,22 @@ export function LoginPage() {
   }
 
   /**
-   * Send another code.
+   * Send another code, through IAM's own resend endpoint.
    *
-   * Not `mfa/resend` — that endpoint is [Authorize]d and there is no session until the
-   * code is accepted, so it answers 401 at this point in the flow (verified against
-   * dev IAM with a live mfa_id). Replaying the password leg is what IAM actually
-   * offers here: it mints a fresh mfa_id, mails a new code, and retires nothing we
-   * still need. The password is already in state from the form above.
+   * `mfa/resend` takes only the mfaId: IAM looks the pending attempt up in its cache
+   * and mails a new code for the same user, so no credential is re-sent and the
+   * project's CAPTCHA is not involved. The challenge keeps the id it already has —
+   * see resendMfaCode for what the response's replacement id would have bought.
+   *
+   * Caveat worth knowing: IAM decorates this endpoint with `[Authorize]`, and on this
+   * screen there is no session yet (the cookie only arrives once a code is accepted).
+   * Against dev IAM an anonymous call is refused with 401 / `www-authenticate: Bearer`,
+   * which lands in the UnauthorizedError branch below. It does succeed for a returning
+   * visitor whose refresh cookie is still good, since blocksFetch renews and replays
+   * the request before giving up — so this is not dead code. Making it work for
+   * everyone is a one-line server change — `[AllowAnonymous]` on
+   * MfaController.ResendOtp, which is safe: the mfaId is the only thing it accepts and
+   * it addresses nothing else.
    */
   async function onResendMfa() {
     if (!challenge || resendCooldown.remaining > 0) return;
@@ -221,24 +231,21 @@ export function LoginPage() {
     setError(null);
     setNotice(null);
     try {
-      const result = await loginWithPassword(username, password, captcha.code || undefined);
-      if (result.status === 'mfa-required') {
-        setChallenge(result.challenge);
-        setMfaCode('');
-        setNotice('A new code is on its way.');
-        resendCooldown.start();
-        return;
-      }
-      // MFA was switched off between the two calls: the replay signed us straight in.
-      await qc.invalidateQueries({ queryKey: ME_KEY });
-      navigate('/', { replace: true });
+      await resendMfaCode(challenge.mfaId);
+      setMfaCode('');
+      setNotice('A new code is on its way.');
+      resendCooldown.start();
     } catch (e) {
-      setError(authErrorMessage(e));
-      // A spent or newly-demanded challenge can only be answered on the password
-      // form, so that is where the user has to go back to.
-      if (isCaptchaError(e)) {
-        setChallenge(null);
-        captcha.handleError(e);
+      // The pending attempt has aged out of IAM's cache, so there is nothing left to
+      // resend against — only a fresh sign-in mints a new one.
+      if (mfaErrorCode(e) === 'invalid_two_factor_id') {
+        setError('This sign-in attempt has expired. Start over to get a new code.');
+      } else if (e instanceof UnauthorizedError) {
+        setError(
+          'A new code could not be sent from this screen. Start over to have one sent.',
+        );
+      } else {
+        setError(mfaErrorMessage(e));
       }
     } finally {
       setResending(false);
@@ -418,27 +425,20 @@ export function LoginPage() {
 
                 <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                   <span>No code yet?</span>
-                  {captcha.enabled ? (
-                    // Resending replays the password leg, and that needs a CAPTCHA
-                    // answer — the one from a moment ago is spent. So on a protected
-                    // project the only honest offer is a trip back to the form.
-                    <span>Start over to have a new one sent.</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={onResendMfa}
-                      disabled={busy || resending || resendCooldown.remaining > 0}
-                      className="inline-flex items-center gap-1.5 font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline disabled:pointer-events-none disabled:font-normal disabled:text-muted-foreground"
-                    >
-                      {resending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      )}
-                      {resending ? 'Sending…' : 'Send a new code'}
-                      {resendCooldown.label && ` (${resendCooldown.label})`}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={onResendMfa}
+                    disabled={busy || resending || resendCooldown.remaining > 0}
+                    className="inline-flex items-center gap-1.5 font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline disabled:pointer-events-none disabled:font-normal disabled:text-muted-foreground"
+                  >
+                    {resending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    )}
+                    {resending ? 'Sending…' : 'Send a new code'}
+                    {resendCooldown.label && ` (${resendCooldown.label})`}
+                  </button>
                 </div>
 
                 <button
