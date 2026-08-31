@@ -25,6 +25,11 @@ import {
 } from '@/features/auth/embedded';
 import { authErrorCode, authErrorMessage } from '@/features/auth/errors';
 import { Captcha, useCaptcha } from '@/features/auth/captcha-widget';
+import {
+  emailSignupAllowed,
+  getSignupSettings,
+  SIGNUP_SETTINGS_KEY,
+} from '@/features/auth/api';
 import { mfaErrorCode, mfaErrorMessage, resendMfaCode } from '@/features/auth/mfa';
 import { useResendCooldown } from '@/features/auth/use-resend-cooldown';
 import { ProviderButton } from '@/features/auth/provider-button';
@@ -129,6 +134,16 @@ export function LoginPage() {
     retry: false,
   });
 
+  // Whether this project takes self-service registrations. Unauthenticated, so it
+  // resolves on a cold load; a failure just leaves the link hidden rather than
+  // offering a page that would only be refused.
+  const { data: signupSettings } = useQuery({
+    queryKey: SIGNUP_SETTINGS_KEY,
+    queryFn: getSignupSettings,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
   if (isChecking) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
@@ -146,6 +161,7 @@ export function LoginPage() {
   if (isLoggedIn) return <Navigate to="/" replace />;
 
   const blocked = issues.length > 0;
+  const canSignUp = emailSignupAllowed(signupSettings);
   const providers = options?.ssoInfo ?? [];
   const hostedLogin = BLOCKS.hostedLogin && !!BLOCKS.oidcClientId;
 
@@ -591,6 +607,18 @@ export function LoginPage() {
                 <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading sign-in options…
+                </p>
+              )}
+
+              {canSignUp && (
+                <p className="mt-8 text-center text-sm text-muted-foreground">
+                  New here?{' '}
+                  <Link
+                    to="/signup"
+                    className="font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                  >
+                    Create an account
+                  </Link>
                 </p>
               )}
               </>

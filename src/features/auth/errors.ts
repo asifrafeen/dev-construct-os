@@ -120,6 +120,32 @@ export function accountErrorMessage(response: AccountResponse | undefined): stri
   return messages[0] ?? 'The request could not be completed. Please try again.';
 }
 
+/**
+ * The same `{isSuccess, errors}` body, dug back out of a *thrown* request.
+ *
+ * recover and reset report failure with HTTP 200, so `accountErrorMessage` above sees
+ * the body directly. Signup does not — it answers 400, which `blocksFetch` turns into
+ * a BlocksError before any caller can look inside. Returns null when the error is not
+ * account-shaped, so the caller can fall back to `authErrorMessage`.
+ */
+export function accountErrorFromError(error: unknown): string | null {
+  if (!(error instanceof BlocksError)) return null;
+
+  let body: unknown = error.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return null;
+    }
+  }
+  if (!body || typeof body !== 'object') return null;
+
+  const response = body as AccountResponse;
+  if (!response.errors || typeof response.errors !== 'object') return null;
+  return accountErrorMessage(response);
+}
+
 /** Throws with a readable message unless the account call actually succeeded. */
 export function assertAccountOk(response: AccountResponse | undefined): void {
   const message = accountErrorMessage(response);

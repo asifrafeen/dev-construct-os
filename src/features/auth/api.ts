@@ -1,6 +1,11 @@
-import { blocksFetch } from '@/lib/blocks-client';
+import { BlocksError, blocksFetch } from '@/lib/blocks-client';
 import { BLOCKS, IAM_BASE } from '@/lib/env';
-import { assertAccountOk, type AccountResponse } from './errors';
+import {
+  accountErrorFromError,
+  assertAccountOk,
+  authErrorMessage,
+  type AccountResponse,
+} from './errors';
 
 /**
  * Start password recovery. Always resolves for a well-formed address, whether or not
@@ -27,6 +32,312 @@ export async function recoverAccount(email: string, captchaCode?: string): Promi
   });
   // A 200 here still carries `isSuccess: false` for validation failures.
   assertAccountOk(res);
+}
+
+/**
+ * What the project allows an anonymous visitor to do. Published unauthenticated on
+ * purpose — the sign-in page has to know whether to offer a "create an account" link
+ * before anyone has a session.
+ */
+export interface SignupSettings {
+  /** The master switch. False hides sign-up whatever the two below say. */
+  isSignUpEnable: boolean;
+  isEmailPasswordSignUpEnabled: boolean;
+  isSSoSignUpEnabled: boolean;
+}
+
+/** Shared so the sign-in page and the sign-up page read one cached answer. */
+export const SIGNUP_SETTINGS_KEY = ['auth', 'signup-settings'] as const;
+
+export const getSignupSettings = (): Promise<SignupSettings> =>
+  blocksFetch<SignupSettings>(`${IAM_BASE}/iam/signup-settings`, { noRetry: true });
+
+/** True when a visitor can register with an email address on this project. */
+export const emailSignupAllowed = (settings: SignupSettings | null | undefined): boolean =>
+  !!settings?.isSignUpEnable && !!settings.isEmailPasswordSignUpEnabled;
+
+/**
+ * Whether this project lets a new account bring its own organization.
+ *
+ * Anonymous, like signup-settings — the sign-up page reads it before rendering to
+ * decide whether to ask for an organization at all. Both flags have to be on: IAM
+ * answers `multi_org_disabled` for the first and `org_creation_disabled` for the
+ * second, and either one fails the *whole* signup, user included, because the org is
+ * created before the user.
+ */
+export interface OrganizationConfig {
+  isMultiOrgEnabled: boolean;
+  allowOrgCreationFromSignup: boolean;
+  allowOrgCreationFromPortal: boolean;
+  allowOrgCreationFromCloud: boolean;
+  allowOrgCreationFromConstruct: boolean;
+}
+
+export const ORGANIZATION_CONFIG_KEY = ['iam', 'organization-config'] as const;
+
+export const getOrganizationConfig = (): Promise<OrganizationConfig> =>
+  blocksFetch<OrganizationConfig>(`${IAM_BASE}/iam/organizations/config`, { noRetry: true });
+
+/** True when signup may create an organization on this project. */
+export const orgSignupAllowed = (config: OrganizationConfig | null | undefined): boolean =>
+  !!config?.isMultiOrgEnabled && !!config.allowOrgCreationFromSignup;
+
+/**
+ * The organization profile signup accepts — IAM's `SignupOrganizationInfo`, which is an
+ * allowlist rather than the full create request.
+ *
+ * What is missing is missing on purpose, server-side: `defaultRoleForMembers` and
+ * `defaultPermissionsForMembers` are inherited by every later member of the org, and
+ * signup is anonymous, so accepting them would let a stranger mint themselves an admin
+ * org. Same for `parentOrganizationId`, `isDisabled`, `logoId` and `shortCode`. Do not
+ * "complete" this type from the Organization entity.
+ *
+ * Only `name` is required. Everything else is optional so the form can grow without
+ * the API layer changing.
+ */
+export interface SignupOrganization {
+  name: string;
+  description?: string;
+  email?: string;
+  phoneNumber?: string;
+  websiteUrl?: string;
+  industry?: string;
+  /** IANA id; IAM rejects anything TimeZoneInfo cannot resolve. */
+  timeZone?: string;
+  locale?: string;
+  /** Exactly three letters, e.g. CHF. */
+  currency?: string;
+  dateFormat?: string;
+  timeFormat?: string;
+  logoUrl?: string;
+  addresses?: Array<{
+    name?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    isPrimary?: boolean;
+  }>;
+  theme?: {
+    name?: string;
+    /** Hex, e.g. #124091. */
+    primaryColor?: string;
+    secondaryColor?: string;
+    tertiaryColor?: string;
+  };
+  attributes?: Record<string, unknown>;
+}
+
+export interface SignupInput {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+  /** Answered challenge, when the project configured one — see ./captcha.ts. */
+  captchaCode?: string;
+  /** Supplied only when the project allows it — see orgSignupAllowed. */
+  organization?: SignupOrganization;
+}
+
+export interface SignupResult {
+  /** The new user's id. */
+  itemId: string | null;
+  /** The organization created alongside it, when one was asked for. */
+  organizationId: string | null;
+}
+
+/**
+ * Self-service registration.
+ *
+ * Note what this does *not* take: a password. IAM creates the account unverified and
+ * inactive, mails an activation link, and the password is set on /activate — the same
+ * page an invited user lands on. So there is nothing to sign in with until the link is
+ * followed, and this call never establishes a session.
+ *
+ * The project's own default roles and permissions are applied server-side; the client
+ * neither sends nor can influence them.
+ *
+ * With an `organization`, one call creates both. Note the ordering IAM uses: the org is
+ * created *first*, so a rejected organization means no user either — and a rejected
+ * user rolls the org back. There is no half-finished state to recover from, which is
+ * why the form can simply stay put on a 400.
+ *
+ * The profile goes out twice, in the nested object and in the legacy flat pair. That is
+ * not redundancy for its own sake: the nested `organization` is the newer contract and
+ * an IAM that predates it ignores the unknown field and reads `organizationName`, while
+ * a current one takes `organization.name` by documented precedence. Both are satisfied
+ * by one request, so this works either side of the IAM deployment.
+ */
+export async function signUp(input: SignupInput): Promise<SignupResult> {
+  const org = input.organization;
+
+  const res = await blocksFetch<AccountResponse & { organizationId?: string }>(
+    `${IAM_BASE}/auth/signup`,
+    {
+      method: 'POST',
+      body: {
+        email: input.email,
+        firstName: input.firstName?.trim() || undefined,
+        lastName: input.lastName?.trim() || undefined,
+        phoneNumber: input.phoneNumber?.trim() || undefined,
+        isSsoSignup: false,
+        ...(input.captchaCode ? { captchaCode: input.captchaCode } : {}),
+        ...(org
+          ? {
+              createOrganizationDuringSignup: true,
+              organization: org,
+              // Back-compat, see above. IAM trims the name either way.
+              organizationName: org.name,
+              organizationDescription: org.description,
+            }
+          : {}),
+      },
+      noRetry: true, // nobody is signed in here; a 401 would not be renewable
+    },
+  );
+  // Belt and braces: IAM answers 400 on failure (already thrown by now), but the
+  // account shape allows a 200 with isSuccess:false and that must not read as success.
+  assertAccountOk(res);
+
+  return { itemId: res.itemId ?? null, organizationId: res.organizationId ?? null };
+}
+
+/**
+ * Error keys that belong to the organization half of the form.
+ *
+ * A signup failure has to land on the step that can fix it, and IAM returns one flat
+ * `errors` map for both halves. The fixed codes come from the org pipeline; the
+ * capitalised ones are FluentValidation property names off `SignupOrganizationInfo`.
+ *
+ * `Email` and `PhoneNumber` are absent deliberately, even though the org validator can
+ * emit them: they collide with the user's own fields, and this form does not send an
+ * organization email or phone. Add them here only alongside inputs that set them.
+ */
+const ORG_ERROR_KEYS = new Set([
+  'name_already_exists',
+  'multi_org_disabled',
+  'org_creation_disabled',
+  'organization_creation_failed',
+  'OrganizationName',
+  'Name',
+  'Description',
+  'WebsiteUrl',
+  'LogoUrl',
+  'Industry',
+  'TimeZone',
+  'Currency',
+  'Locale',
+  'DateFormat',
+  'TimeFormat',
+  'Addresses',
+  'Theme',
+]);
+
+export interface SignupFailure {
+  /** IAM's raw `{ key: message }` map. */
+  errors: Record<string, string>;
+  /** First message, ready to print. */
+  message: string;
+  /** True when the organization step is the one that can fix it. */
+  isOrganizationError: boolean;
+  /** True for a name clash specifically — the one failure with a one-click fix. */
+  isNameTaken: boolean;
+  /**
+   * Free alternatives IAM offers alongside a name clash. Empty against an IAM that
+   * predates them, so never render a "pick one of these" UI without a fallback.
+   */
+  nameSuggestions: string[];
+}
+
+/** Unpacks a thrown signup 400 into something the form can route. Null if not one. */
+export function signupFailure(error: unknown): SignupFailure | null {
+  if (!(error instanceof BlocksError)) return null;
+
+  let body: unknown = error.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return null;
+    }
+  }
+  if (!body || typeof body !== 'object') return null;
+
+  const parsed = body as AccountResponse & { organizationNameSuggestions?: unknown };
+  const errors = (parsed.errors ?? {}) as Record<string, string>;
+  const keys = Object.keys(errors);
+  if (keys.length === 0) return null;
+
+  const suggestions = Array.isArray(parsed.organizationNameSuggestions)
+    ? parsed.organizationNameSuggestions.filter((n): n is string => typeof n === 'string')
+    : [];
+
+  return {
+    errors,
+    message: signupErrorMessage(error),
+    isOrganizationError: keys.some((key) => ORG_ERROR_KEYS.has(key)),
+    isNameTaken: keys.includes('name_already_exists'),
+    nameSuggestions: suggestions,
+  };
+}
+
+export interface OrganizationNameAvailability {
+  isAvailable: boolean;
+  suggestions: string[];
+}
+
+/**
+ * Advisory check for the organization step, so a clash surfaces while the user is
+ * still typing rather than at final submit.
+ *
+ * Advisory in both directions. It is a check-then-act gap by nature — the name can go
+ * between here and submit — and the endpoint is newer than some deployed IAMs, which
+ * answer the SPA's HTML instead of JSON. So anything that is not a well-formed answer
+ * resolves to null and the caller says nothing; `CreateOrganizationAsync` remains the
+ * only authority.
+ */
+export async function checkOrganizationName(
+  name: string,
+): Promise<OrganizationNameAvailability | null> {
+  try {
+    const res = await blocksFetch<unknown>(
+      `${IAM_BASE}/iam/organizations/name/available?name=${encodeURIComponent(name)}`,
+      { noRetry: true, headers: { accept: 'application/json' } },
+    );
+    if (!res || typeof res !== 'object' || !('isAvailable' in res)) return null;
+
+    const answer = res as { isAvailable?: unknown; suggestions?: unknown };
+    if (typeof answer.isAvailable !== 'boolean') return null;
+
+    return {
+      isAvailable: answer.isAvailable,
+      suggestions: Array.isArray(answer.suggestions)
+        ? answer.suggestions.filter((n): n is string => typeof n === 'string')
+        : [],
+    };
+  } catch {
+    // Not deployed, multi-org off, offline — none of which should block the form.
+    return null;
+  }
+}
+
+/**
+ * IAM's own wording is fine for most signup failures — "x@y is already registered",
+ * "Email is required." — so only the ones that read like internal notes are replaced.
+ */
+const SIGNUP_ERROR_HELP: Record<string, string> = {
+  'sign-up is disabled.': 'This project is not accepting new accounts right now.',
+  'sso sign-up is disabled.': 'This project is not accepting new accounts right now.',
+  'Organization creation is disabled because multi-organization mode is off.':
+    'This project cannot create organizations. Ask an administrator to add you to an existing one.',
+};
+
+export function signupErrorMessage(error: unknown): string {
+  const message = accountErrorFromError(error);
+  if (message) return SIGNUP_ERROR_HELP[message] ?? message;
+  return authErrorMessage(error);
 }
 
 export interface ResetPasswordInput {
