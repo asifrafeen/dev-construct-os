@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Building2, Check, Plus } from 'lucide-react';
+import { Building2, Check, Loader2, Plus } from 'lucide-react';
 import type { Organization } from '@/features/orgs/api';
 import {
   useActiveOrg,
   useCreateOrg,
+  useMyOrgs,
   useOrgConfig,
   useOrgs,
+  useSwitchOrg,
   useUpdateOrg,
 } from '@/features/orgs/hooks';
+import { authErrorMessage } from '@/features/auth/errors';
 import { useRoles } from '@/features/roles/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
@@ -23,8 +26,16 @@ export function OrganizationsPage() {
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState<Organization | null>(null);
 
-  const { activeOrgId, setActiveOrg } = useActiveOrg();
+  const { activeOrgId } = useActiveOrg();
   const config = useOrgConfig();
+  const switchOrg = useSwitchOrg();
+
+  // This table lists every organization in the project, but switching is only possible
+  // into one the signed-in user actually belongs to — IAM checks membership and answers
+  // `organization_not_available` otherwise. `organizations/my` is that membership list,
+  // so the button can say why it is unavailable instead of failing on click.
+  const myOrgs = useMyOrgs();
+  const memberOf = new Set((myOrgs.data ?? []).map((o) => o.itemId));
 
   useEffect(() => setPage(0), [search]);
 
@@ -76,6 +87,12 @@ export function OrganizationsPage() {
         </CardHeader>
 
         <CardContent>
+          {switchOrg.isError && (
+            <div className="mb-4">
+              <ErrorNote error={authErrorMessage(switchOrg.error)} />
+            </div>
+          )}
+
           {isPending ? (
             <Spinner />
           ) : isError ? (
@@ -142,12 +159,25 @@ export function OrganizationsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={o.itemId === activeOrgId}
-                            onClick={() => setActiveOrg(o.itemId)}
-                            title="Work in this organization"
+                            disabled={
+                              o.itemId === activeOrgId ||
+                              switchOrg.isPending ||
+                              // Still loading the membership list: better to wait than
+                              // to offer a switch that would be refused.
+                              myOrgs.isPending ||
+                              !memberOf.has(o.itemId)
+                            }
+                            onClick={() => switchOrg.mutate(o.itemId)}
+                            title={
+                              memberOf.has(o.itemId)
+                                ? 'Move your session into this organization'
+                                : 'You are not a member of this organization'
+                            }
                           >
                             {o.itemId === activeOrgId ? (
                               <Check className="h-4 w-4" />
+                            ) : switchOrg.isPending && switchOrg.variables === o.itemId ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               'Switch to'
                             )}

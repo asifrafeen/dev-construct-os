@@ -77,5 +77,30 @@ export function useUpdateOrg() {
   });
 }
 
+/**
+ * Switch organization for real: the session moves, not just this tab's preference.
+ *
+ * The local marker is written only after IAM accepts, so a refused switch leaves the
+ * UI showing the organization the session is actually in.
+ *
+ * Then everything is invalidated, which is not laziness. `/iam/me` projects roles and
+ * permissions *for the session's organization* — `MapToSingleAccountFields(user,
+ * contextOrgId)` — so the signed-in user's own access changes shape across a switch,
+ * and with it every permission-gated screen. Users, roles and permission lists are all
+ * scoped the same way.
+ */
+export function useSwitchOrg() {
+  const qc = useQueryClient();
+  const setActiveOrg = useActiveOrg((s) => s.setActiveOrg);
+
+  return useMutation({
+    mutationFn: (organizationId: string) => orgs.switchOrg(organizationId),
+    onSuccess: async (_result, organizationId) => {
+      setActiveOrg(organizationId);
+      await qc.invalidateQueries();
+    },
+  });
+}
+
 export const useOrgConfig = () =>
   useQuery({ queryKey: ['iam', 'orgs', 'config'], queryFn: () => orgs.getConfig(), retry: false });

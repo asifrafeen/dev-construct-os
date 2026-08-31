@@ -5,6 +5,7 @@ import {
   Database,
   FolderUp,
   LayoutDashboard,
+  Loader2,
   LogOut,
   ShieldCheck,
   UserCircle,
@@ -13,7 +14,8 @@ import {
 import { cn, initials } from '@/lib/utils';
 import { useMe } from '@/features/users/hooks';
 import { useLogout } from '@/features/auth/hooks';
-import { useMyOrgsWithActive } from '@/features/orgs/hooks';
+import { useMyOrgsWithActive, useSwitchOrg } from '@/features/orgs/hooks';
+import { authErrorMessage } from '@/features/auth/errors';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -28,24 +30,42 @@ const NAV = [
 ];
 
 function OrgSwitcher() {
-  const { orgs, activeOrgId, setActiveOrg, isPending, isError } = useMyOrgsWithActive();
+  const { orgs, activeOrgId, isPending, isError } = useMyOrgsWithActive();
+  const switchOrg = useSwitchOrg();
 
   if (isPending) return <span className="text-xs text-muted-foreground">Loading orgs…</span>;
   if (isError || orgs.length === 0) return null;
   if (orgs.length === 1) return <span className="text-sm font-medium">{orgs[0].name}</span>;
 
   return (
-    <select
-      className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-      value={activeOrgId ?? ''}
-      onChange={(e) => setActiveOrg(e.target.value)}
-    >
-      {orgs.map((o) => (
-        <option key={o.itemId} value={o.itemId}>
-          {o.name}
-        </option>
-      ))}
-    </select>
+    <div className="flex min-w-0 items-center gap-2">
+      <select
+        className="h-9 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
+        // Bound to the *session's* organization, not to what was clicked: on a refused
+        // switch nothing was written, so the select snaps back on its own.
+        value={activeOrgId ?? ''}
+        disabled={switchOrg.isPending}
+        onChange={(e) => switchOrg.mutate(e.target.value)}
+      >
+        {orgs.map((o) => (
+          <option key={o.itemId} value={o.itemId}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+
+      {switchOrg.isPending && (
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Switching…
+        </span>
+      )}
+      {switchOrg.isError && (
+        <span className="truncate text-xs text-destructive" title={authErrorMessage(switchOrg.error)}>
+          {authErrorMessage(switchOrg.error)}
+        </span>
+      )}
+    </div>
   );
 }
 

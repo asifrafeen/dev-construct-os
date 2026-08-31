@@ -168,6 +168,33 @@ export const orgs = {
     });
   },
 
+  /**
+   * Move the *session* into another organization.
+   *
+   * Lives under `auth/`, not `iam/`, because it is a re-authentication: IAM reissues
+   * the access and refresh tokens carrying the new organization claim and sets them as
+   * cookies, exactly as login does. Nothing about the user record changes.
+   *
+   * The body key is snake_case — `SwitchOrganizationRequest` pins it with
+   * `[JsonPropertyName("organization_id")]`, so camelCase is silently ignored and the
+   * call fails as `invalid_request`.
+   *
+   * Membership is enforced server-side against the user's organizations, roles and
+   * permissions; anything else is refused with `organization_not_available`.
+   *
+   * Deliberately NOT `noRetry`. A refresh token inside its rotation grace window is
+   * refused here with `session_expired` — IAM will not switch on a superseded token,
+   * because the access half would carry the new organization while the refresh half
+   * stayed bound to the old one, and the next refresh would silently undo the switch.
+   * Its documented recovery is "refresh, then switch again", which is exactly what
+   * blocksFetch's 401 path does on our behalf.
+   */
+  switchOrg: (organizationId: string) =>
+    blocksFetch<unknown>(`${IAM_BASE}/auth/switch-org`, {
+      method: 'POST',
+      body: { organization_id: organizationId },
+    }),
+
   getConfig: () => blocksFetch<OrgConfig>(`${IAM}/organizations/config`),
 
   setConfig: (cfg: OrgConfig) =>

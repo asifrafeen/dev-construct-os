@@ -21,6 +21,12 @@ export interface Me {
   /** UserMfaType: 0 none, 1 TOTP, 2 email, 3 SMS, 4 WhatsApp. */
   userMfaType: number;
   attributes: Record<string, unknown>;
+  /**
+   * The organization the *session* is in — IAM projects this user's roles and
+   * permissions for it, so it changes across an auth/switch-org. Authoritative, unlike
+   * the locally stored active-org marker in features/orgs/hooks.
+   */
+  organizationId?: string;
   logInCount: number;
   lastLoggedInTime: string;
 }
