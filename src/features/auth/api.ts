@@ -205,16 +205,60 @@ export async function signUp(input: SignupInput): Promise<SignupResult> {
 }
 
 /**
- * Error keys that belong to the organization half of the form.
- *
- * A signup failure has to land on the step that can fix it, and IAM returns one flat
- * `errors` map for both halves. The fixed codes come from the org pipeline; the
- * capitalised ones are FluentValidation property names off `SignupOrganizationInfo`.
- *
- * `Email` and `PhoneNumber` are absent deliberately, even though the org validator can
- * emit them: they collide with the user's own fields, and this form does not send an
- * organization email or phone. Add them here only alongside inputs that set them.
+ * Server-side limits from `SignupOrganizationValidator`, mirrored so the form can stop
+ * a value before the round trip. Keep them in step with the validator — a form that
+ * lets through what IAM rejects turns a typo into a failed submit.
  */
+export const SIGNUP_ORG_LIMITS = {
+  name: 150,
+  description: 500,
+  maxAddresses: 5,
+  addressName: 100,
+  addressLine: 200,
+  city: 100,
+  state: 100,
+  postalCode: 20,
+  country: 100,
+  /** From SignupAttributeNormalizer — it drops or truncates rather than complaining. */
+  maxAttributes: 25,
+  attributeKey: 64,
+  attributeValue: 512,
+} as const;
+
+/**
+ * Why IAM would refuse an attribute key. Null when it is fine.
+ *
+ * The normalizer silently *drops* bad keys rather than erroring, so without this the
+ * user would submit, succeed, and find their attribute missing.
+ */
+export function attributeKeyProblem(key: string): string | null {
+  const trimmed = key.trim();
+  if (!trimmed) return 'Name is required.';
+  if (trimmed.length > SIGNUP_ORG_LIMITS.attributeKey)
+    return `Keep it under ${SIGNUP_ORG_LIMITS.attributeKey} characters.`;
+  // Both are illegal MongoDB field names.
+  if (trimmed.startsWith('$')) return 'Cannot start with $.';
+  if (trimmed.includes('.')) return 'Cannot contain a dot.';
+  return null;
+}
+
+/**
+ * A form value is always a string, but the attribute store keeps real JSON types and
+ * IAM normalizes numbers and booleans as such. So "10" is sent as 10 and "true" as
+ * true — but only when the conversion round-trips exactly.
+ *
+ * That guard is the point: it keeps "0123" and "1.50" as the strings they plainly are,
+ * rather than silently turning a postal code into 123.
+ */
+export function coerceAttributeValue(raw: string): string | number | boolean {
+  const value = raw.trim();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value !== '' && String(Number(value)) === value) return Number(value);
+  return raw;
+}
+
+/** Exact error keys owned by the organization step. */
 const ORG_ERROR_KEYS = new Set([
   'name_already_exists',
   'multi_org_disabled',
@@ -232,8 +276,28 @@ const ORG_ERROR_KEYS = new Set([
   'DateFormat',
   'TimeFormat',
   'Addresses',
-  'Theme',
 ]);
+
+/**
+ * Whether a failure belongs to the organization step rather than the person's.
+ *
+ * IAM flattens both halves into one `errors` map, and the form has to land the message
+ * on the step that can fix it. Three shapes to catch:
+ *
+ *   fixed codes and property names  → the set above
+ *   per-item validator keys         → "Addresses[0].City", "Theme.PrimaryColor"
+ *   `Email`                         → ambiguous, and the reason for the message check
+ *
+ * `Email` is emitted by *both* validators: "Email is required." for the account's own
+ * address, "Email invalid" for the organization's. Same key, different owner, so the
+ * message is the only thing that separates them (verified against dev IAM).
+ */
+function ownedByOrganization(key: string, message: string): boolean {
+  if (ORG_ERROR_KEYS.has(key)) return true;
+  if (key.startsWith('Addresses[') || key.startsWith('Theme.')) return true;
+  if (key === 'Email') return message.trim().toLowerCase() === 'email invalid';
+  return false;
+}
 
 export interface SignupFailure {
   /** IAM's raw `{ key: message }` map. */
@@ -277,7 +341,7 @@ export function signupFailure(error: unknown): SignupFailure | null {
   return {
     errors,
     message: signupErrorMessage(error),
-    isOrganizationError: keys.some((key) => ORG_ERROR_KEYS.has(key)),
+    isOrganizationError: keys.some((key) => ownedByOrganization(key, errors[key] ?? '')),
     isNameTaken: keys.includes('name_already_exists'),
     nameSuggestions: suggestions,
   };

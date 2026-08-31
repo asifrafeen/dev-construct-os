@@ -14,6 +14,7 @@ export function AuthScreen({
   children,
   backTo,
   backLabel = 'Back to sign in',
+  wide = false,
 }: {
   icon: ComponentType<{ className?: string }>;
   tone?: 'primary' | 'destructive' | 'success';
@@ -22,6 +23,8 @@ export function AuthScreen({
   children?: ReactNode;
   backTo?: string;
   backLabel?: string;
+  /** Roomier column, for forms with side-by-side fields. */
+  wide?: boolean;
 }) {
   const tones = {
     primary: 'bg-primary/10 text-primary',
@@ -31,7 +34,11 @@ export function AuthScreen({
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-sm space-y-6 duration-500 animate-in fade-in slide-in-from-bottom-2">
+      <div
+        className={`w-full space-y-6 duration-500 animate-in fade-in slide-in-from-bottom-2 ${
+          wide ? 'max-w-lg' : 'max-w-sm'
+        }`}
+      >
         <div className="space-y-3 text-center">
           <span
             className={`mx-auto flex h-12 w-12 items-center justify-center rounded-xl ${tones[tone]}`}
