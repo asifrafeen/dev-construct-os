@@ -29,7 +29,7 @@ export function ProfilePage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
         <p className="text-sm text-muted-foreground">
-          PATCH /iam/v4/iam/me · POST /iam/v4/mfa/*
+          POST /iam/v4/iam/me · POST /iam/v4/mfa/*
         </p>
       </div>
 
