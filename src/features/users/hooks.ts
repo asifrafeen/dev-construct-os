@@ -86,8 +86,15 @@ export function useRevokeUserAccess() {
 
 export function useUpdateMe() {
   const qc = useQueryClient();
+  const { data: me } = useMe();
+
   return useMutation({
-    mutationFn: (body: Record<string, unknown>) => users.patchMe(body),
+    mutationFn: (body: Record<string, unknown>) => {
+      // /iam/me is the only source of the caller's own id, and the request carries it
+      // — see users.updateMe for why. No session, nothing to update.
+      if (!me?.itemId) throw new Error('No signed-in user to update.');
+      return users.updateMe(me.itemId, body);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ME_KEY }),
   });
 }

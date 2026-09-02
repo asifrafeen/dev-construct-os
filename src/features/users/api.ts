@@ -73,8 +73,22 @@ export const users = {
 
   me: () => blocksFetch<{ data: Me }>(`${IAM}/me`),
 
-  patchMe: (body: Record<string, unknown>) =>
-    blocksFetch<unknown>(`${IAM}/me`, { method: 'PATCH', body }),
+  /**
+   * Update the signed-in user's own profile.
+   *
+   * POST, not PATCH: IAM declares only `[HttpGet("me")]` and `[HttpPost("me")]`, so a
+   * PATCH never reaches the action — it is refused by routing with 405 before
+   * authorization even runs.
+   *
+   * `itemId` is sent even though the server knows who is calling. The older build
+   * binds this body to `UpdateUserRequest`, whose validator requires a non-empty
+   * ItemId; the newer one binds to `UpdateMyAccountRequest`, which deliberately has no
+   * ItemId and merely logs it as an unmapped field. Sending it satisfies the first and
+   * is inert to the second. It grants nothing either way — both builds take the user
+   * id from the session, never from the body.
+   */
+  updateMe: (userId: string, body: Record<string, unknown>) =>
+    blocksFetch<unknown>(`${IAM}/me`, { method: 'POST', body: { ...body, itemId: userId } }),
 
   /** Lists are POST, not GET. Org scoping rides in `filter.organizationIds`. */
   list: (body: Record<string, unknown> = {}) =>
