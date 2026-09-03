@@ -5,6 +5,7 @@ import {
   useActiveOrg,
   useCreateOrg,
   useMyOrgs,
+  useOrg,
   useOrgConfig,
   useOrgs,
   useSwitchOrg,
@@ -371,8 +372,24 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function OrgDetailModal({ org, onClose }: { org: Organization; onClose: () => void }) {
+/**
+ * The full organization, read back by id.
+ *
+ * The row handed in comes from the list endpoint, which is a projection — it carries
+ * enough to render the table and no more. Anything below that the list omits (the
+ * addresses and attributes a signup can now supply, the locale and format defaults)
+ * would read as "—" if this rendered the row it was opened from.
+ *
+ * So the row is used only as placeholder content while GET organizations/{id} is in
+ * flight: the dialog opens populated instead of empty, then fills in.
+ */
+function OrgDetailModal({ org: listRow, onClose }: { org: Organization; onClose: () => void }) {
   const update = useUpdateOrg();
+  const detail = useOrg(listRow.itemId);
+  const org = detail.data ?? listRow;
+
+  const addresses = org.addresses ?? [];
+  const attributes = Object.entries(org.attributes ?? {});
 
   return (
     <Modal
@@ -401,6 +418,13 @@ function OrgDetailModal({ org, onClose }: { org: Organization; onClose: () => vo
         </>
       }
     >
+      {detail.isPending && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading full details…
+        </p>
+      )}
+
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
         <Row label="Id">
           <code className="break-all text-xs">{org.itemId}</code>
@@ -417,6 +441,9 @@ function OrgDetailModal({ org, onClose }: { org: Organization; onClose: () => vo
         <Row label="Industry">{org.industry || '—'}</Row>
         <Row label="Time zone">{org.timeZone || '—'}</Row>
         <Row label="Currency">{org.currency || '—'}</Row>
+        <Row label="Locale">{org.locale || '—'}</Row>
+        <Row label="Date format">{org.dateFormat || '—'}</Row>
+        <Row label="Time format">{org.timeFormat || '—'}</Row>
         <Row label="Created">{formatDate(org.createdDate)}</Row>
         <Row label="Default roles">
           {org.defaultRoleForMembers?.length ? org.defaultRoleForMembers.join(', ') : '—'}
@@ -424,6 +451,50 @@ function OrgDetailModal({ org, onClose }: { org: Organization; onClose: () => vo
         <Row label="Parent org">{org.parentOrganizationId || '—'}</Row>
       </dl>
 
+      {addresses.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Addresses</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {addresses.map((address, index) => (
+              <div key={index} className="rounded-md border p-3 text-sm">
+                <p className="flex items-center gap-2 font-medium">
+                  {address.name || `Address ${index + 1}`}
+                  {address.isPrimary && <Badge tone="default">Primary</Badge>}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  {[
+                    address.addressLine1,
+                    address.addressLine2,
+                    address.city,
+                    address.state,
+                    address.postalCode,
+                    address.country,
+                  ]
+                    .filter(Boolean)
+                    .join(', ') || '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {attributes.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Attributes</p>
+          <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {attributes.map(([key, value]) => (
+              <Row key={key} label={key}>
+                {/* Values are free-form JSON — a number and a string both land here. */}
+                {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
+              </Row>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      {/* The row is still on screen, so a failed read degrades rather than blanks. */}
+      {detail.isError && <ErrorNote error={detail.error} />}
       {update.isError && <ErrorNote error={update.error} />}
     </Modal>
   );
