@@ -227,8 +227,17 @@ export function OrganizationsPage() {
   );
 }
 
+/**
+ * Creating an organization is a two-step affair on purpose.
+ *
+ * IAM creates the record, but the session stays where it is — and `/auth/switch-org`
+ * only admits a user who is a *member* of the target. Whether creating one makes you a
+ * member is the server's call, so rather than assume either way, the success step offers
+ * the switch and reports plainly if it is refused.
+ */
 function CreateOrgModal({ onClose }: { onClose: () => void }) {
   const create = useCreateOrg();
+  const switchOrg = useSwitchOrg();
   // Default roles are slugs from the *active* org's role list — the new org has none yet.
   const rolesQuery = useRoles({ pageSize: 200 });
 
@@ -237,7 +246,29 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [timeZone, setTimeZone] = useState(() => {
+    // The browser already knows; pre-filling beats making someone hunt for it.
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const [currency, setCurrency] = useState('');
+  const [locale, setLocale] = useState(() => navigator.language ?? '');
+  const [primaryColor, setPrimaryColor] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
   const [defaultRoles, setDefaultRoles] = useState<Set<string>>(new Set());
+
+  const [addressLine1, setAddressLine1] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [country, setCountry] = useState('');
+
+  /** Set once IAM accepts — flips the modal into its success step. */
+  const [createdId, setCreatedId] = useState<string | null>(null);
 
   const canSubmit = name.trim().length > 0 && !create.isPending;
 
@@ -251,6 +282,18 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
 
   const submit = () => {
     if (!canSubmit) return;
+
+    // Send an address only if something was actually typed — an object of empty
+    // strings is worse than no address at all.
+    const [line1, town, region, postal, nation] = [
+      addressLine1,
+      city,
+      state,
+      postalCode,
+      country,
+    ].map((v) => v.trim());
+    const hasAddress = [line1, town, region, postal, nation].some(Boolean);
+
     create.mutate(
       {
         name: name.trim(),
@@ -258,16 +301,74 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
         email: email.trim() || undefined,
         phoneNumber: phoneNumber.trim() || undefined,
         websiteUrl: websiteUrl.trim() || undefined,
+        industry: industry.trim() || undefined,
+        timeZone: timeZone.trim() || undefined,
+        currency: currency.trim() || undefined,
+        locale: locale.trim() || undefined,
+        logoUrl: logoUrl.trim() || undefined,
+        theme: primaryColor.trim() ? { primaryColor: primaryColor.trim() } : undefined,
         defaultRoleForMembers: defaultRoles.size ? [...defaultRoles] : undefined,
+        addresses: hasAddress
+          ? [
+              {
+                addressLine1: line1 || undefined,
+                city: town || undefined,
+                state: region || undefined,
+                postalCode: postal || undefined,
+                country: nation || undefined,
+                isPrimary: true,
+              },
+            ]
+          : undefined,
       },
-      { onSuccess: () => onClose() },
+      // The envelope keys the new id under `itemId`, not `data`.
+      { onSuccess: (result) => setCreatedId(result.itemId ?? '') },
     );
   };
+
+  if (createdId !== null) {
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title={`${name.trim()} created`}
+        description="The organization exists. Your session is still in the previous one."
+        footer={
+          <>
+            <Button variant="outline" onClick={onClose} disabled={switchOrg.isPending}>
+              Stay here
+            </Button>
+            <Button
+              disabled={!createdId || switchOrg.isPending}
+              onClick={() => switchOrg.mutate(createdId, { onSuccess: () => onClose() })}
+            >
+              {switchOrg.isPending ? 'Switching…' : 'Switch to it'}
+            </Button>
+          </>
+        }
+      >
+        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+          <Row label="Name">{name.trim()}</Row>
+          <Row label="Id">
+            <code className="break-all text-xs">{createdId || '— not returned —'}</code>
+          </Row>
+        </dl>
+
+        <p className="text-sm text-muted-foreground">
+          Switch in before creating roles here — a new role lands in whichever organization
+          the session is in, so roles made now would go to the old one.
+        </p>
+
+        {switchOrg.isError && <ErrorNote error={authErrorMessage(switchOrg.error)} />}
+      </Modal>
+    );
+  }
 
   return (
     <Modal
       open
       onClose={onClose}
+      className="max-w-2xl"
       title="New organization"
       description="Only a name is required; everything else can be filled in later."
       footer={
@@ -323,16 +424,103 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => setPhoneNumber(e.target.value)}
             />
           </Field>
+          <Field label="Website" htmlFor="org-website">
+            <Input
+              id="org-website"
+              placeholder="https://example.com"
+              value={websiteUrl}
+              onChange={(e) => setWebsiteUrl(e.target.value)}
+            />
+          </Field>
+          <Field label="Industry" htmlFor="org-industry">
+            <Input
+              id="org-industry"
+              placeholder="Construction"
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+            />
+          </Field>
         </div>
 
-        <Field label="Website" htmlFor="org-website">
-          <Input
-            id="org-website"
-            placeholder="https://example.com"
-            value={websiteUrl}
-            onChange={(e) => setWebsiteUrl(e.target.value)}
-          />
-        </Field>
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Locale, branding and address
+          </summary>
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Time zone" htmlFor="org-tz">
+                <Input id="org-tz" value={timeZone} onChange={(e) => setTimeZone(e.target.value)} />
+              </Field>
+              <Field label="Locale" htmlFor="org-locale">
+                <Input
+                  id="org-locale"
+                  placeholder="en-US"
+                  value={locale}
+                  onChange={(e) => setLocale(e.target.value)}
+                />
+              </Field>
+              <Field label="Currency" htmlFor="org-currency">
+                <Input
+                  id="org-currency"
+                  placeholder="USD"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                />
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Primary colour" htmlFor="org-color" hint="Any CSS colour, e.g. #2563eb">
+                <div className="flex gap-2">
+                  <Input
+                    id="org-color"
+                    placeholder="#2563eb"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                  />
+                  <input
+                    type="color"
+                    aria-label="Pick primary colour"
+                    className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-input bg-background"
+                    value={/^#[0-9a-f]{6}$/i.test(primaryColor) ? primaryColor : '#2563eb'}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                  />
+                </div>
+              </Field>
+              <Field label="Logo URL" htmlFor="org-logo">
+                <Input
+                  id="org-logo"
+                  placeholder="https://…/logo.png"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                />
+              </Field>
+            </div>
+
+            <Field label="Primary address" htmlFor="org-address1">
+              <Input
+                id="org-address1"
+                placeholder="Street address"
+                value={addressLine1}
+                onChange={(e) => setAddressLine1(e.target.value)}
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-4">
+              <Input placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} />
+              <Input placeholder="State" value={state} onChange={(e) => setState(e.target.value)} />
+              <Input
+                placeholder="Postal code"
+                value={postalCode}
+                onChange={(e) => setPostalCode(e.target.value)}
+              />
+              <Input
+                placeholder="Country"
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+              />
+            </div>
+          </div>
+        </details>
 
         <Field
           label="Default roles for new members"
@@ -372,17 +560,6 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/**
- * The full organization, read back by id.
- *
- * The row handed in comes from the list endpoint, which is a projection — it carries
- * enough to render the table and no more. Anything below that the list omits (the
- * addresses and attributes a signup can now supply, the locale and format defaults)
- * would read as "—" if this rendered the row it was opened from.
- *
- * So the row is used only as placeholder content while GET organizations/{id} is in
- * flight: the dialog opens populated instead of empty, then fills in.
- */
 function OrgDetailModal({ org: listRow, onClose }: { org: Organization; onClose: () => void }) {
   const update = useUpdateOrg();
   const detail = useOrg(listRow.itemId);

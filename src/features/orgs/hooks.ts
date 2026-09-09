@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { orgs, type CreateOrgInput, type ListOrgsParams, type Organization } from './api';
+import { orgs, type CreateOrgInput, type ListOrgsParams, type SaveOrgInput } from './api';
 
 interface ActiveOrgState {
   activeOrgId: string | null;
@@ -72,7 +72,8 @@ export function useCreateOrg() {
 export function useUpdateOrg() {
   const invalidate = useOrgsInvalidator();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string } & Partial<Organization>) => orgs.update(id, body),
+    mutationFn: ({ id, ...body }: { id: string } & SaveOrgInput & { isDisabled?: boolean }) =>
+      orgs.update(id, body),
     onSuccess: invalidate,
   });
 }

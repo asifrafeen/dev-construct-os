@@ -230,17 +230,35 @@ function RoleFormModal({
   const [parentRoleSlug, setParentRoleSlug] = useState(role?.parentRoleSlug ?? '');
   const [canCreateOwn, setCanCreateOwn] = useState(role?.canCreateOwn ?? false);
   const [propagate, setPropagate] = useState(false);
+  const [confirmDuplicateName, setConfirmDuplicateName] = useState(false);
 
   const effectiveSlug = slugTouched ? slug : slugify(name);
   // A role can't be its own parent.
   const parentOptions = existing.filter((r) => r.slug && r.slug !== role?.slug);
-  const duplicate = !isEdit && !!effectiveSlug && existing.some((r) => r.slug === effectiveSlug);
-  const canSubmit = name.trim().length > 0 && !!effectiveSlug && !duplicate && !mutation.isPending;
+
+  // Slugs are the identity, so a collision is a hard stop.
+  const duplicateSlug =
+    !isEdit && !!effectiveSlug && existing.some((r) => r.slug === effectiveSlug);
+
+  // Names are not unique, but the server still refuses a repeat unless told it was
+  // intentional — ask here rather than letting the request come back rejected.
+  const trimmedName = name.trim();
+  const duplicateName =
+    !isEdit &&
+    !!trimmedName &&
+    existing.some((r) => r.name?.trim().toLowerCase() === trimmedName.toLowerCase());
+
+  const canSubmit =
+    trimmedName.length > 0 &&
+    !!effectiveSlug &&
+    !duplicateSlug &&
+    (!duplicateName || confirmDuplicateName) &&
+    !mutation.isPending;
 
   const submit = () => {
     if (!canSubmit) return;
     const common = {
-      name: name.trim(),
+      name: trimmedName,
       description: description.trim() || undefined,
       parentRoleSlug: parentRoleSlug || undefined,
       canCreateOwn,
@@ -249,7 +267,10 @@ function RoleFormModal({
     if (isEdit) {
       update.mutate({ itemId: role.itemId, propagateToOtherOrg: propagate, ...common }, done);
     } else {
-      create.mutate({ slug: effectiveSlug, ...common }, done);
+      create.mutate(
+        { slug: effectiveSlug, ...common, ...(duplicateName ? { confirmDuplicateName } : {}) },
+        done,
+      );
     }
   };
 
@@ -311,10 +332,27 @@ function RoleFormModal({
             placeholder="site-manager"
           />
         </Field>
-        {duplicate && (
+        {duplicateSlug && (
           <p className="text-sm text-destructive">
             A role with the slug <code>{effectiveSlug}</code> already exists in this organization.
           </p>
+        )}
+
+        {duplicateName && (
+          <label className="flex items-start gap-2 rounded-md border border-dashed p-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={confirmDuplicateName}
+              onChange={(e) => setConfirmDuplicateName(e.target.checked)}
+            />
+            <span>
+              Another role is already called “{trimmedName}” — create this one anyway
+              <span className="block text-xs text-muted-foreground">
+                The slug stays unique, so the two are distinct roles with the same label.
+              </span>
+            </span>
+          </label>
         )}
 
         <Field label="Description" htmlFor="role-description">

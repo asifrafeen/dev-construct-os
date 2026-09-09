@@ -81,15 +81,20 @@ export interface OrgConfig {
 
 /**
  * `CreatedFrom` is declared as an unnamed enum [1, 2, 3] — the Swagger publishes no
- * member names, and the IAM source in this workspace predates the create endpoint, so
- * the mapping could not be confirmed. 2 is the reasoned guess for Construct (the org
- * config gates creation per surface: Cloud, Construct, Signup, Portal).
+ * member names, so this value is not derivable from the spec. 3 is Construct, per the
+ * platform team.
  *
- * If `POST /organizations/create` rejects the value, this constant is the only line
- * that needs to change.
+ * The server pairs it with the matching `allowOrgCreationFrom*` flag in the org config,
+ * so a wrong value gets checked against the wrong gate. Don't "fix" it by guessing.
  */
-export const CREATED_FROM_CONSTRUCT = 2;
+export const CREATED_FROM_CONSTRUCT = 3;
 
+/**
+ * Mirrors `CreateOrganizationRequest`. `name` is the only required field, and the
+ * schema is `additionalProperties: false` — an undeclared key is a 400, not a field the
+ * server shrugs off. Notably absent here versus the entity: `shortCode` (server-issued),
+ * `parentOrganizationId`, and `logoId` (create takes `logoUrl` only).
+ */
 export interface CreateOrgInput {
   name: string;
   description?: string;
@@ -101,6 +106,41 @@ export interface CreateOrgInput {
   defaultPermissionsForMembers?: string[];
   addresses?: Address[];
   attributes?: Record<string, unknown>;
+  theme?: Theme;
+  logoUrl?: string;
+  industry?: string;
+  timeZone?: string;
+  currency?: string;
+  dateFormat?: string;
+  timeFormat?: string;
+  locale?: string;
+}
+
+/**
+ * Mirrors `SaveOrganizationRequest`, minus the enabled flag which callers express as
+ * the entity's `isDisabled` (see `orgs.update`). Kept as its own type so a whole
+ * `Organization` can't be spread into the request: the entity carries `itemId`,
+ * `createdDate`, `shortCode` and friends, none of which the strict schema accepts.
+ */
+export interface SaveOrgInput {
+  name?: string;
+  description?: string;
+  email?: string;
+  phoneNumber?: string;
+  websiteUrl?: string;
+  defaultRoleForMembers?: string[];
+  defaultPermissionsForMembers?: string[];
+  addresses?: Address[];
+  attributes?: Record<string, unknown>;
+  theme?: Theme;
+  logoUrl?: string;
+  logoId?: string;
+  industry?: string;
+  timeZone?: string;
+  currency?: string;
+  dateFormat?: string;
+  timeFormat?: string;
+  locale?: string;
 }
 
 export interface ListOrgsParams {
@@ -159,12 +199,39 @@ export const orgs = {
   /**
    * Save takes `isEnable` (enabled), while the entity reads back `isDisabled`. Callers
    * pass the entity's polarity and the flip happens here, once.
+   *
+   * Fields are picked explicitly rather than spread: the schema is strict, so leaking
+   * a read-only entity field like `createdDate` would fail the whole save.
    */
-  update: (id: string, body: Partial<Organization> & { isDisabled?: boolean }) => {
-    const { isDisabled, itemId: _itemId, ...rest } = body;
+  update: (id: string, body: SaveOrgInput & { isDisabled?: boolean }) => {
+    const { isDisabled, ...rest } = body;
+    const allowed: (keyof SaveOrgInput)[] = [
+      'name',
+      'description',
+      'email',
+      'phoneNumber',
+      'websiteUrl',
+      'defaultRoleForMembers',
+      'defaultPermissionsForMembers',
+      'addresses',
+      'attributes',
+      'theme',
+      'logoUrl',
+      'logoId',
+      'industry',
+      'timeZone',
+      'currency',
+      'dateFormat',
+      'timeFormat',
+      'locale',
+    ];
+    const payload: Record<string, unknown> = {};
+    for (const key of allowed) if (rest[key] !== undefined) payload[key] = rest[key];
+    if (isDisabled !== undefined) payload.isEnable = !isDisabled;
+
     return blocksFetch<{ isSuccess: boolean }>(`${IAM}/organizations/${id}`, {
       method: 'POST',
-      body: { ...rest, ...(isDisabled === undefined ? {} : { isEnable: !isDisabled }) },
+      body: payload,
     });
   },
 
