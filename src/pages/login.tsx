@@ -6,10 +6,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Blocks,
+  Check,
   Database,
   Loader2,
   Lock,
-  MailCheck,
+  RotateCcw,
   ShieldCheck,
   Users,
 } from 'lucide-react';
@@ -24,9 +25,17 @@ import {
 } from '@/features/auth/embedded';
 import { authErrorCode, authErrorMessage } from '@/features/auth/errors';
 import { Captcha, useCaptcha } from '@/features/auth/captcha-widget';
+import {
+  emailSignupAllowed,
+  getSignupSettings,
+  SIGNUP_SETTINGS_KEY,
+} from '@/features/auth/api';
+import { mfaErrorCode, mfaErrorMessage, resendMfaCode } from '@/features/auth/mfa';
+import { useResendCooldown } from '@/features/auth/use-resend-cooldown';
 import { ProviderButton } from '@/features/auth/provider-button';
 import { startLogin } from '@/features/auth/sso';
 import { ME_KEY, useIsLoggedIn } from '@/features/users/hooks';
+import { UnauthorizedError } from '@/lib/blocks-client';
 import { BLOCKS, configIssues } from '@/lib/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/misc';
@@ -100,6 +109,10 @@ export function LoginPage() {
    */
   const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
   const [mfaCode, setMfaCode] = useState('');
+  /** Confirmation that a new code went out — cleared by the next action. */
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const resendCooldown = useResendCooldown();
 
   const issues = configIssues();
 
@@ -121,6 +134,16 @@ export function LoginPage() {
     retry: false,
   });
 
+  // Whether this project takes self-service registrations. Unauthenticated, so it
+  // resolves on a cold load; a failure just leaves the link hidden rather than
+  // offering a page that would only be refused.
+  const { data: signupSettings } = useQuery({
+    queryKey: SIGNUP_SETTINGS_KEY,
+    queryFn: getSignupSettings,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
   if (isChecking) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
@@ -138,6 +161,7 @@ export function LoginPage() {
   if (isLoggedIn) return <Navigate to="/" replace />;
 
   const blocked = issues.length > 0;
+  const canSignUp = emailSignupAllowed(signupSettings);
   const providers = options?.ssoInfo ?? [];
   const hostedLogin = BLOCKS.hostedLogin && !!BLOCKS.oidcClientId;
 
@@ -151,6 +175,9 @@ export function LoginPage() {
         // Credentials were fine — there is simply no cookie until the code lands.
         setChallenge(result.challenge);
         setMfaCode('');
+        setNotice(null);
+        // This attempt *is* the first send, so the resend button starts cold.
+        resendCooldown.start();
         return;
       }
       // The cookie now exists; /iam/me is the source of truth for the session.
@@ -196,11 +223,58 @@ export function LoginPage() {
     }
   }
 
+  /**
+   * Send another code, through IAM's own resend endpoint.
+   *
+   * `mfa/resend` takes only the mfaId: IAM looks the pending attempt up in its cache
+   * and mails a new code for the same user, so no credential is re-sent and the
+   * project's CAPTCHA is not involved. The challenge keeps the id it already has —
+   * see resendMfaCode for what the response's replacement id would have bought.
+   *
+   * Caveat worth knowing: IAM decorates this endpoint with `[Authorize]`, and on this
+   * screen there is no session yet (the cookie only arrives once a code is accepted).
+   * Against dev IAM an anonymous call is refused with 401 / `www-authenticate: Bearer`,
+   * which lands in the UnauthorizedError branch below. It does succeed for a returning
+   * visitor whose refresh cookie is still good, since blocksFetch renews and replays
+   * the request before giving up — so this is not dead code. Making it work for
+   * everyone is a one-line server change — `[AllowAnonymous]` on
+   * MfaController.ResendOtp, which is safe: the mfaId is the only thing it accepts and
+   * it addresses nothing else.
+   */
+  async function onResendMfa() {
+    if (!challenge || resendCooldown.remaining > 0) return;
+    setResending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await resendMfaCode(challenge.mfaId);
+      setMfaCode('');
+      setNotice('A new code is on its way.');
+      resendCooldown.start();
+    } catch (e) {
+      // The pending attempt has aged out of IAM's cache, so there is nothing left to
+      // resend against — only a fresh sign-in mints a new one.
+      if (mfaErrorCode(e) === 'invalid_two_factor_id') {
+        setError('This sign-in attempt has expired. Start over to get a new code.');
+      } else if (e instanceof UnauthorizedError) {
+        setError(
+          'A new code could not be sent from this screen. Start over to have one sent.',
+        );
+      } else {
+        setError(mfaErrorMessage(e));
+      }
+    } finally {
+      setResending(false);
+    }
+  }
+
   /** Abandon the challenge. Re-submitting the form mints a new id and a new code. */
   function onCancelMfa() {
     setChallenge(null);
     setMfaCode('');
     setError(null);
+    setNotice(null);
+    resendCooldown.clear();
     // The solved challenge from the first leg is spent, so the retry needs a new one.
     captcha.reset();
   }
@@ -328,7 +402,7 @@ export function LoginPage() {
                       className="text-center text-lg tracking-[0.4em]"
                       value={mfaCode}
                       onChange={(e) => setMfaCode(e.target.value.replace(/\s/g, ''))}
-                      disabled={busy}
+                      disabled={busy || resending}
                     />
                   </div>
 
@@ -336,7 +410,7 @@ export function LoginPage() {
                     type="submit"
                     size="lg"
                     className="group w-full"
-                    disabled={busy || mfaCode.trim().length === 0}
+                    disabled={busy || resending || mfaCode.trim().length === 0}
                   >
                     {busy ? (
                       <>
@@ -358,15 +432,35 @@ export function LoginPage() {
                   </p>
                 )}
 
-                <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  <MailCheck className="h-3.5 w-3.5 shrink-0" />
-                  No code yet? Start over to have a new one sent.
-                </p>
+                {notice != null && (
+                  <p className="mt-4 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400">
+                    <Check className="h-4 w-4 shrink-0" />
+                    {notice}
+                  </p>
+                )}
+
+                <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  <span>No code yet?</span>
+                  <button
+                    type="button"
+                    onClick={onResendMfa}
+                    disabled={busy || resending || resendCooldown.remaining > 0}
+                    className="inline-flex items-center gap-1.5 font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline disabled:pointer-events-none disabled:font-normal disabled:text-muted-foreground"
+                  >
+                    {resending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    )}
+                    {resending ? 'Sending…' : 'Send a new code'}
+                    {resendCooldown.label && ` (${resendCooldown.label})`}
+                  </button>
+                </div>
 
                 <button
                   type="button"
                   onClick={onCancelMfa}
-                  disabled={busy}
+                  disabled={busy || resending}
                   className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
@@ -513,6 +607,18 @@ export function LoginPage() {
                 <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading sign-in options…
+                </p>
+              )}
+
+              {canSignUp && (
+                <p className="mt-8 text-center text-sm text-muted-foreground">
+                  New here?{' '}
+                  <Link
+                    to="/signup"
+                    className="font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                  >
+                    Create an account
+                  </Link>
                 </p>
               )}
               </>

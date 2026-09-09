@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { orgs, type CreateOrgInput, type ListOrgsParams, type Organization } from './api';
+import { orgs, type CreateOrgInput, type ListOrgsParams, type SaveOrgInput } from './api';
 
 interface ActiveOrgState {
   activeOrgId: string | null;
@@ -72,8 +72,34 @@ export function useCreateOrg() {
 export function useUpdateOrg() {
   const invalidate = useOrgsInvalidator();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string } & Partial<Organization>) => orgs.update(id, body),
+    mutationFn: ({ id, ...body }: { id: string } & SaveOrgInput & { isDisabled?: boolean }) =>
+      orgs.update(id, body),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Switch organization for real: the session moves, not just this tab's preference.
+ *
+ * The local marker is written only after IAM accepts, so a refused switch leaves the
+ * UI showing the organization the session is actually in.
+ *
+ * Then everything is invalidated, which is not laziness. `/iam/me` projects roles and
+ * permissions *for the session's organization* — `MapToSingleAccountFields(user,
+ * contextOrgId)` — so the signed-in user's own access changes shape across a switch,
+ * and with it every permission-gated screen. Users, roles and permission lists are all
+ * scoped the same way.
+ */
+export function useSwitchOrg() {
+  const qc = useQueryClient();
+  const setActiveOrg = useActiveOrg((s) => s.setActiveOrg);
+
+  return useMutation({
+    mutationFn: (organizationId: string) => orgs.switchOrg(organizationId),
+    onSuccess: async (_result, organizationId) => {
+      setActiveOrg(organizationId);
+      await qc.invalidateQueries();
+    },
   });
 }
 

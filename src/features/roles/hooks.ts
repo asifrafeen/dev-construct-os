@@ -61,22 +61,23 @@ function useRolesInvalidator() {
   return () => qc.invalidateQueries({ queryKey: ['iam', 'roles'] });
 }
 
+/**
+ * The new role lands in whichever organization the *session* is in — there is no org id
+ * on `CreateRoleRequest`, and the strict schema rejects one. Switch organization first
+ * (the header switcher calls `/auth/switch-org`) to create a role somewhere else.
+ */
 export function useCreateRole() {
-  const { activeOrgId } = useActiveOrg();
   const invalidate = useRolesInvalidator();
   return useMutation({
-    mutationFn: (input: CreateRoleInput) =>
-      roles.create({ organizationId: activeOrgId ?? undefined, ...input }),
+    mutationFn: (input: CreateRoleInput) => roles.create(input),
     onSuccess: invalidate,
   });
 }
 
 export function useUpdateRole() {
-  const { activeOrgId } = useActiveOrg();
   const invalidate = useRolesInvalidator();
   return useMutation({
-    mutationFn: (input: UpdateRoleInput) =>
-      roles.update({ organizationId: activeOrgId ?? undefined, ...input }),
+    mutationFn: (input: UpdateRoleInput) => roles.update(input),
     onSuccess: invalidate,
   });
 }

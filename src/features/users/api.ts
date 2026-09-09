@@ -16,8 +16,17 @@ export interface Me {
   status: number;
   isVerified: boolean;
   mfaEnabled: boolean;
+  /** False between enrolling and proving the channel — see features/auth/mfa.ts. */
+  isMfaVerified: boolean;
+  /** UserMfaType: 0 none, 1 TOTP, 2 email, 3 SMS, 4 WhatsApp. */
   userMfaType: number;
   attributes: Record<string, unknown>;
+  /**
+   * The organization the *session* is in — IAM projects this user's roles and
+   * permissions for it, so it changes across an auth/switch-org. Authoritative, unlike
+   * the locally stored active-org marker in features/orgs/hooks.
+   */
+  organizationId?: string;
   logInCount: number;
   lastLoggedInTime: string;
 }
@@ -64,8 +73,22 @@ export const users = {
 
   me: () => blocksFetch<{ data: Me }>(`${IAM}/me`),
 
-  patchMe: (body: Record<string, unknown>) =>
-    blocksFetch<unknown>(`${IAM}/me`, { method: 'PATCH', body }),
+  /**
+   * Update the signed-in user's own profile.
+   *
+   * POST, not PATCH: IAM declares only `[HttpGet("me")]` and `[HttpPost("me")]`, so a
+   * PATCH never reaches the action — it is refused by routing with 405 before
+   * authorization even runs.
+   *
+   * `itemId` is sent even though the server knows who is calling. The older build
+   * binds this body to `UpdateUserRequest`, whose validator requires a non-empty
+   * ItemId; the newer one binds to `UpdateMyAccountRequest`, which deliberately has no
+   * ItemId and merely logs it as an unmapped field. Sending it satisfies the first and
+   * is inert to the second. It grants nothing either way — both builds take the user
+   * id from the session, never from the body.
+   */
+  updateMe: (userId: string, body: Record<string, unknown>) =>
+    blocksFetch<unknown>(`${IAM}/me`, { method: 'POST', body: { ...body, itemId: userId } }),
 
   /** Lists are POST, not GET. Org scoping rides in `filter.organizationIds`. */
   list: (body: Record<string, unknown> = {}) =>

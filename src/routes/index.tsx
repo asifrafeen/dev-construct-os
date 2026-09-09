@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/login';
 import { LoginCallbackPage } from '@/pages/login-callback';
 import { SocialCallbackPage } from '@/pages/social-callback';
 import { ActivatePage } from '@/pages/activate';
+import { SignupPage } from '@/pages/signup';
 import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { ResetPasswordPage } from '@/pages/reset-password';
 import { DashboardPage } from '@/pages/dashboard';
@@ -24,7 +25,10 @@ export const router = createBrowserRouter([
   // Embedded social login returns here — must match the redirect URI registered on
   // the provider (Google/Microsoft) and on the Blocks identity provider record.
   { path: '/callback', element: <SocialCallbackPage /> },
-  // Only reachable from an invite email; not part of SSO login.
+  // Self-service registration. Ends at the activation email rather than a session —
+  // IAM creates the account inactive and the password is set on /activate.
+  { path: '/signup', element: <SignupPage /> },
+  // Reached from an invite email or from the link sign-up sends; not part of SSO login.
   { path: '/activate', element: <ActivatePage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
   // IAM decides the recovery link's path from its own config: `oidc/recover/<tenantId>`

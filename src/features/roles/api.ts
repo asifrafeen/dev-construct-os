@@ -5,10 +5,15 @@ const IAM = `${IAM_BASE}/iam`;
 
 /**
  * Roles are an organization-scoped resource: every Role entity carries an
- * `organizationId`, and `POST /iam/roles` filters by it. Creation, however, does not
- * declare an org id in `CreateRoleRequest` — the server derives it from the caller's
- * context. We still send `organizationId` on create/update so a multi-org admin lands
- * the role in the org they are actually looking at; an older server simply ignores it.
+ * `organizationId`, and `POST /iam/roles` filters by it.
+ *
+ * Create and update do NOT take an org id. Every IAM request schema is declared
+ * `additionalProperties: false`, so an undeclared field is a 400 rather than something
+ * the server quietly ignores — `CreateRoleRequest` and `UpdateRoleRequest` list no
+ * `organizationId`, and sending one anyway breaks the call.
+ *
+ * The org a new role lands in therefore comes from the *session*, which is what
+ * `POST /auth/switch-org` moves (see `orgs.switchOrg`). Switch first, then create.
  */
 
 export interface Role {
@@ -59,15 +64,21 @@ export interface Permission {
   roles?: string[] | null;
 }
 
+/** Mirrors `CreateRoleRequest` exactly — the schema is strict, so no extra keys. */
 export interface CreateRoleInput {
   name: string;
   slug?: string;
   description?: string;
   parentRoleSlug?: string;
   canCreateOwn?: boolean;
-  organizationId?: string;
+  /**
+   * Slugs are unique, names are not. The server rejects a second role with an existing
+   * *name* unless this says the caller meant it.
+   */
+  confirmDuplicateName?: boolean;
 }
 
+/** Mirrors `UpdateRoleRequest` exactly. Note it has no `slug` — a slug is immutable. */
 export interface UpdateRoleInput {
   itemId: string;
   name?: string;
@@ -76,7 +87,6 @@ export interface UpdateRoleInput {
   canCreateOwn?: boolean;
   /** Push the same change to every organization this role exists in. */
   propagateToOtherOrg?: boolean;
-  organizationId?: string;
 }
 
 /**
