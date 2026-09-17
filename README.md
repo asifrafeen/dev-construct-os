@@ -116,7 +116,7 @@ Three rules the whole client layer is built on:
 
 A 401 triggers one session refresh and one retry;
 a second 401 means genuinely signed out and routes to `/login`. Renewal currently goes to
-`POST /api/oidc/token` (form-encoded, `grant_type=refresh_token`) as a temporary stand-in for
+`POST /iam/v4/oidc/token` (form-encoded, `grant_type=refresh_token`) as a temporary stand-in for
 `POST /iam/v4/auth/refresh` — see `REFRESH_ENDPOINT` in `src/state/auth-store.ts` to switch back.
 
 ## Layout
