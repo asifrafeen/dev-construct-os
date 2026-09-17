@@ -73,8 +73,11 @@ interface RefreshResponse {
  * around; it is bypassed here only until it behaves on the current deployment. The two
  * differ in wire format, not in meaning:
  *
- *   auth/refresh      POST {IAM_BASE}/auth/refresh        JSON `{}`
- *   oidc/token        POST {apiUrl}/api/oidc/token        form `grant_type=refresh_token`
+ *   auth/refresh      POST {IAM_BASE}/auth/refresh   JSON `{}`
+ *   oidc/token        POST {IAM_BASE}/oidc/token     form `grant_type=refresh_token`
+ *
+ * e.g. https://blocksapi.selisesme.com/iam/v4/oidc/token — the host comes from
+ * VITE_BLOCKS_API_URL, so each environment renews against its own API.
  *
  * Flip this to 'auth-refresh' to put it back — nothing else has to change.
  */
@@ -94,7 +97,7 @@ function refreshRequest(): { url: string; headers: Record<string, string>; body:
     if (BLOCKS.oidcClientId) form.set('client_id', BLOCKS.oidcClientId);
 
     return {
-      url: `${BLOCKS.apiUrl}/api/oidc/token`,
+      url: `${IAM_BASE}/oidc/token`,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: form.toString(),
     };
