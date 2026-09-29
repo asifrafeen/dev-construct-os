@@ -48,11 +48,17 @@ export function JoinPage() {
   // run would redeem an already-spent link and report a valid invitation as invalid.
   const ran = useRef(false);
 
-  /** Finishes a redemption locally: the cookie is already set by the time we get here. */
-  async function land() {
+  /**
+   * Finishes a redemption locally: the cookie is already set by the time we get here.
+   *
+   * The link exists to put the invitee on a particular page, so landing on the app's default
+   * would defeat the point. OIDC carries that path on the authorize redirect; embedded has no
+   * redirect, so it comes back in the token body.
+   */
+  async function land(forwardedTo: string | null) {
     markSignedIn();
     await qc.invalidateQueries({ queryKey: ME_KEY });
-    navigate('/', { replace: true });
+    navigate(forwardedTo ?? '/', { replace: true });
   }
 
   /**
@@ -63,7 +69,7 @@ export function JoinPage() {
     const outcome = redeemOutcome(res);
     switch (outcome.kind) {
       case 'signed-in':
-        return land();
+        return land(outcome.forwardedTo);
       case 'navigate':
         // A full navigation, not a router push: the URL is IAM's, not this app's.
         window.location.assign(outcome.url);

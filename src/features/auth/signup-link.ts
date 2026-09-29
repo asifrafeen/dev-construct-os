@@ -1,3 +1,4 @@
+import { safeForwardedTo } from './api';
 import { blocksFetch } from '@/lib/blocks-client';
 import { IAM_BASE } from '@/lib/env';
 
@@ -61,6 +62,8 @@ export interface RedeemSignupLinkResponse {
   token_type?: string;
   expires_in?: number;
   id_token?: string;
+  /** The page the link was generated for. Embedded has no redirect to carry it. */
+  forwardedTo?: string;
   /** True when the tokens went into HttpOnly cookies, which is what this app runs on. */
   cookie_set?: boolean;
   access_token?: string;
@@ -137,7 +140,7 @@ export function completeSignupLinkMfa(
 /** What the join page should do next with a redeem response. */
 export type RedeemOutcome =
   /** Embedded mode finished: the session cookie is set and the app is signed in. */
-  | { kind: 'signed-in' }
+  | { kind: 'signed-in'; forwardedTo: string | null }
   /** OIDC mode: follow this and the browser comes back to /login/callback. */
   | { kind: 'navigate'; url: string }
   /** PasswordRequired: the invitee sets a password on /activate before any session. */
@@ -170,7 +173,7 @@ export function redeemOutcome(res: RedeemSignupLinkResponse): RedeemOutcome {
     // UseTokensCookie false hands the tokens back in the body instead, which would land
     // the invitee on a page that 401s immediately. Say so rather than pretend.
     if (res.cookie_set === false) return { kind: 'error', error: 'tokens_not_in_cookie' };
-    return { kind: 'signed-in' };
+    return { kind: 'signed-in', forwardedTo: safeForwardedTo(res.forwardedTo) };
   }
 
   if (res.error) return { kind: 'error', error: res.error };
