@@ -35,10 +35,18 @@ export interface SignupLinkContext {
 }
 
 /**
- * Exactly one of authorizeUrl / activationKey / loginUrl / mfaId is populated, or none
- * of them when an embedded redemption completed and the session cookie is already set.
+ * Redeem answers in one of *two* shapes, which is the thing to know about this endpoint.
+ *
+ * An OIDC redemption returns IAM's RedeemSignupLinkResponse — `mode: "Oidc"` plus exactly
+ * one of authorizeUrl / activationKey / loginUrl / mfaId.
+ *
+ * An embedded redemption skips that DTO entirely and returns the same body
+ * `POST auth/login` returns: token_type, expires_in, id_token, cookie_set, and the tokens
+ * themselves only when they did not go into cookies. There is no `mode` field on it, so
+ * success has to be recognised from the token fields.
  */
 export interface RedeemSignupLinkResponse {
+  // --- OIDC branch ---
   mode?: SignupLinkMode;
   authorizeUrl?: string;
   activationKey?: string;
@@ -48,6 +56,23 @@ export interface RedeemSignupLinkResponse {
   mfaId?: string;
   userMfa?: string;
   error?: string;
+
+  // --- Embedded branch: the login token body ---
+  token_type?: string;
+  expires_in?: number;
+  id_token?: string;
+  /** True when the tokens went into HttpOnly cookies, which is what this app runs on. */
+  cookie_set?: boolean;
+  access_token?: string;
+  scope?: string;
+
+  // An MFA challenge on the embedded branch travels in the login shape, and it rides in
+  // the *error* slot (`error: "mfa_enabled"`) at HTTP 200 — so it must be read before
+  // `error` is treated as a failure.
+  mfa_required?: boolean;
+  mfa_id?: string;
+  mfa_type?: number | string;
+  mfa_methods?: string;
 }
 
 /**
@@ -122,19 +147,33 @@ export type RedeemOutcome =
   | { kind: 'error'; error: string };
 
 /**
- * Reads the branch out of a redeem response.
+ * Reads the branch out of a redeem response, across both shapes.
  *
- * Order matters: `error` first because IAM can populate it alongside a mode, and the
- * embedded "signed in" case is last because it is the *absence* of every other field
- * rather than a field of its own.
+ * Order matters, and not in the obvious way: MFA is checked **before** `error`, because an
+ * embedded MFA challenge is delivered as `error: "mfa_enabled"` at HTTP 200. Treating
+ * `error` as a failure first would report a completable challenge as a dead link.
+ *
+ * Success on the embedded branch is recognised from the token fields, not from `mode` —
+ * that response is the login body and carries no mode at all.
  */
 export function redeemOutcome(res: RedeemSignupLinkResponse): RedeemOutcome {
-  if (res.error) return { kind: 'error', error: res.error };
-  if (res.mfaId) return { kind: 'mfa', mfaId: res.mfaId, userMfa: res.userMfa };
+  const mfaId = res.mfaId ?? res.mfa_id;
+  if (mfaId) return { kind: 'mfa', mfaId, userMfa: res.userMfa };
+
   if (res.activationKey) return { kind: 'activate', activationKey: res.activationKey };
   if (res.authorizeUrl) return { kind: 'navigate', url: res.authorizeUrl };
   if (res.loginUrl) return { kind: 'navigate', url: res.loginUrl };
-  if (res.mode === 'Embedded') return { kind: 'signed-in' };
+
+  const issuedTokens = Boolean(res.token_type ?? res.id_token ?? res.access_token);
+  if (issuedTokens) {
+    // This app authenticates by cookie — it has no Bearer path. A client registered with
+    // UseTokensCookie false hands the tokens back in the body instead, which would land
+    // the invitee on a page that 401s immediately. Say so rather than pretend.
+    if (res.cookie_set === false) return { kind: 'error', error: 'tokens_not_in_cookie' };
+    return { kind: 'signed-in' };
+  }
+
+  if (res.error) return { kind: 'error', error: res.error };
 
   // An Oidc response with no authorizeUrl has nowhere to send the browser. Saying so
   // beats a blank screen that looks like the app hung.
@@ -154,6 +193,7 @@ export function joinErrorMessage(error: string): string {
       return 'This invitation has already been used.';
     case 'client_invalid':
     case 'provider_not_registered':
+    case 'tokens_not_in_cookie':
       // A misconfiguration on the project, not anything the invitee can act on.
       return 'This invitation cannot be completed because the application is not set up correctly. Let whoever invited you know.';
     default:
