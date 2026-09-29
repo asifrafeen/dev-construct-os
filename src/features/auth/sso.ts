@@ -43,8 +43,14 @@ export async function startLogin(): Promise<never> {
   return new Promise<never>(() => {}); // navigation in flight; never resolves
 }
 
-/** Step 4: run on the callback route. This is what sets the session cookie. */
-export async function finishLogin(search: string): Promise<void> {
+/**
+ * Step 4: run on the callback route. This is what sets the session cookie.
+ *
+ * Returns the in-app path IAM asked us to land on, or null. `/oidc/authorize` puts
+ * `forwardedTo` on the redirect alongside the code — for a signup link it is the path the
+ * configuration froze, and for an ordinary login whatever `/idp/initiate` was given.
+ */
+export async function finishLogin(search: string): Promise<string | null> {
   const params = new URLSearchParams(search);
   const code = params.get('code');
   const state = params.get('state');
@@ -69,4 +75,9 @@ export async function finishLogin(search: string): Promise<void> {
 
   // The session cookie now exists, so a later 401 is renewable — see state/auth-store.
   markSignedIn();
+
+  // Server-supplied, but it arrives through a URL: anything not a relative in-app path is
+  // dropped rather than handed to a navigation.
+  const forwardedTo = params.get('forwardedTo');
+  return forwardedTo?.startsWith('/') && !forwardedTo.startsWith('//') ? forwardedTo : null;
 }

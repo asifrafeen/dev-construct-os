@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { activate } from '@/features/auth/api';
+import {
+  activate,
+  activatedWithSession,
+  safeForwardedTo,
+  type ActivateResult,
+} from '@/features/auth/api';
 import { startLogin } from '@/features/auth/sso';
+import { ME_KEY } from '@/features/users/hooks';
+import { markSignedIn } from '@/state/auth-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorNote, Input } from '@/components/ui/misc';
@@ -11,17 +18,22 @@ import { ErrorNote, Input } from '@/components/ui/misc';
  * Invite-and-activate only. Users who are already active go straight through SSO and
  * never see this page; it exists for accounts created via the portal or IAM API.
  *
- * `?join=Oidc` marks an arrival from a one-click signup link in PasswordRequired mode.
- * Activating such a code also mints the restricted link-session cookie, and
- * /oidc/authorize honours it — so the invitee can be carried straight into the app
- * instead of being asked for the password they set a moment ago.
+ * Three ways out, in order of preference:
  *
- * `?join=Embedded` gets today's behaviour: that cookie is keyed to the link's OIDC
- * client, embedded links have none, and authorize would simply show the login form.
+ *  1. The response carries a session. A signup-link configuration with
+ *     `signInAfterActivation` set answers activation with tokens in cookies, so the
+ *     invitee is already signed in — land them, on the link's `forwardedTo` if it sent
+ *     one. Works the same for both link modes.
+ *  2. `?join=Oidc` without that flag. Activation still leaves the restricted
+ *     link-session cookie behind, and /oidc/authorize spends it without a prompt, so
+ *     starting the SSO flow gets them in silently.
+ *  3. Anything else — an ordinary invite, or an embedded link whose configuration does
+ *     not sign in — goes to the sign-in page, as it always has.
  */
 export function ActivatePage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const code = useMemo(() => params.get('code') ?? '', [params]);
   const continueSilently = params.get('join') === 'Oidc';
 
@@ -30,10 +42,29 @@ export function ActivatePage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [mismatch, setMismatch] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const m = useMutation({
     mutationFn: () => activate({ code, password, firstName, lastName }),
-    onSuccess: async () => {
+    onSuccess: async (res: ActivateResult) => {
+      // An MFA account gets a challenge instead of a session, at HTTP 200 in the error
+      // slot — so this has to be checked before anything treats the call as finished.
+      // This page has no way to answer one, so say so rather than silently sending them
+      // to a login form as if activation had simply completed.
+      if (res.mfa_required || res.mfa_id) {
+        setNotice(
+          'Your password is set. This account also uses a verification step, so finish by signing in.',
+        );
+        return;
+      }
+
+      if (activatedWithSession(res)) {
+        markSignedIn();
+        await qc.invalidateQueries({ queryKey: ME_KEY });
+        navigate(safeForwardedTo(res.forwardedTo) ?? '/', { replace: true });
+        return;
+      }
+
       if (continueSilently) {
         // startLogin navigates away and never resolves, so nothing below runs on success.
         // If it throws — misconfigured client id, initiate refused — fall through to the
@@ -45,9 +76,28 @@ export function ActivatePage() {
           /* fall through */
         }
       }
+
       navigate('/login', { replace: true });
     },
   });
+
+  if (notice) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>Account activated</CardTitle>
+            <CardDescription>{notice}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" onClick={() => navigate('/login', { replace: true })}>
+              Continue to sign in
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!code) {
     return (

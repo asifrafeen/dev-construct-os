@@ -445,10 +445,40 @@ export interface ActivateInput {
 }
 
 /**
- * Invite-and-activate only — not part of SSO login. Already-activated users never
- * touch this. The invitation code is the credential, so there is no session here.
+ * The activation response.
+ *
+ * Normally just the account fields. A one-click signup link whose configuration sets
+ * `signInAfterActivation` answers with a session on top: the tokens go into cookies and the
+ * login token fields are layered onto the same body, plus the link's `forwardedTo`.
+ *
+ * An account with MFA gets the challenge instead, and — as everywhere else in IAM — it
+ * arrives at HTTP 200 in the `error` slot. `res.ok` says nothing about which of the three
+ * this is, so the caller has to look.
  */
-export async function activate(input: ActivateInput): Promise<unknown> {
+export interface ActivateResult {
+  isSuccess?: boolean;
+  itemId?: string;
+
+  // Present only when the configuration asked to sign the invitee in.
+  token_type?: string;
+  expires_in?: number;
+  id_token?: string;
+  cookie_set?: boolean;
+  access_token?: string;
+  /** Relative path the link was configured to land on. */
+  forwardedTo?: string;
+
+  error?: string;
+  mfa_required?: boolean;
+  mfa_id?: string;
+}
+
+/**
+ * Invite-and-activate only — not part of SSO login. Already-activated users never touch
+ * this. The invitation code is the credential; whether a session comes back with it is up
+ * to the signup-link configuration.
+ */
+export async function activate(input: ActivateInput): Promise<ActivateResult> {
   const res = await fetch(`${IAM_BASE}/auth/activate`, {
     method: 'POST',
     // Activating a one-click signup link also mints the restricted link-session cookie,
@@ -468,5 +498,24 @@ export async function activate(input: ActivateInput): Promise<unknown> {
     const detail = await res.text().catch(() => '');
     throw new Error(`activation failed (${res.status}): ${detail || 'no response body'}`);
   }
-  return res.json().catch(() => ({}));
+  return (await res.json().catch(() => ({}))) as ActivateResult;
+}
+
+/** True when activation came back with a usable session rather than just an activated account. */
+export function activatedWithSession(res: ActivateResult): boolean {
+  // cookie_set false means the tokens are in the body instead, and this app has no Bearer
+  // path — treating that as signed in would land the invitee on a page that 401s at once.
+  return Boolean(res.token_type ?? res.id_token) && res.cookie_set !== false;
+}
+
+/**
+ * A relative in-app path, or null.
+ *
+ * `forwardedTo` is server-supplied but arrives through a URL, and IAM validates it as
+ * relative on the way in. Re-checking here costs nothing and keeps a malformed or hostile
+ * value from becoming an open redirect on the way out.
+ */
+export function safeForwardedTo(value: string | null | undefined): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+  return value;
 }

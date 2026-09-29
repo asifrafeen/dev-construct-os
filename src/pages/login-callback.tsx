@@ -18,10 +18,10 @@ export function LoginCallbackPage() {
     ran.current = true;
 
     finishLogin(window.location.search)
-      .then(async () => {
+      .then(async (forwardedTo) => {
         // The cookie now exists; re-run /iam/me so the app picks up the new session.
         await qc.invalidateQueries({ queryKey: ME_KEY });
-        navigate('/', { replace: true });
+        navigate(forwardedTo ?? '/', { replace: true });
       })
       .catch(setError);
   }, [navigate, qc]);
