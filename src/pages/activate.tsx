@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { activate } from '@/features/auth/api';
+import { startLogin } from '@/features/auth/sso';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorNote, Input } from '@/components/ui/misc';
@@ -9,11 +10,20 @@ import { ErrorNote, Input } from '@/components/ui/misc';
 /**
  * Invite-and-activate only. Users who are already active go straight through SSO and
  * never see this page; it exists for accounts created via the portal or IAM API.
+ *
+ * `?join=Oidc` marks an arrival from a one-click signup link in PasswordRequired mode.
+ * Activating such a code also mints the restricted link-session cookie, and
+ * /oidc/authorize honours it — so the invitee can be carried straight into the app
+ * instead of being asked for the password they set a moment ago.
+ *
+ * `?join=Embedded` gets today's behaviour: that cookie is keyed to the link's OIDC
+ * client, embedded links have none, and authorize would simply show the login form.
  */
 export function ActivatePage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const code = useMemo(() => params.get('code') ?? '', [params]);
+  const continueSilently = params.get('join') === 'Oidc';
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -23,7 +33,20 @@ export function ActivatePage() {
 
   const m = useMutation({
     mutationFn: () => activate({ code, password, firstName, lastName }),
-    onSuccess: () => navigate('/login', { replace: true }),
+    onSuccess: async () => {
+      if (continueSilently) {
+        // startLogin navigates away and never resolves, so nothing below runs on success.
+        // If it throws — misconfigured client id, initiate refused — fall through to the
+        // sign-in page rather than stranding the invitee on a form that already succeeded.
+        try {
+          await startLogin();
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      navigate('/login', { replace: true });
+    },
   });
 
   if (!code) {

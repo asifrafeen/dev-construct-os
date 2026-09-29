@@ -451,6 +451,11 @@ export interface ActivateInput {
 export async function activate(input: ActivateInput): Promise<unknown> {
   const res = await fetch(`${IAM_BASE}/auth/activate`, {
     method: 'POST',
+    // Activating a one-click signup link also mints the restricted link-session cookie,
+    // and that cookie is what lets /oidc/authorize sign the invitee in without asking for
+    // the password they just set. IAM is a different origin, so without this the browser
+    // drops the Set-Cookie and the silent continue in ActivatePage has nothing to use.
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', 'x-blocks-key': BLOCKS.projectKey },
     body: JSON.stringify({
       captchaCode: '',

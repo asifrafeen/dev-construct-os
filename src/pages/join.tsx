@@ -11,6 +11,7 @@ import {
   redeemSignupLink,
   type RedeemSignupLinkResponse,
   type SignupLinkContext,
+  type SignupLinkMode,
 } from '@/features/auth/signup-link';
 import { AuthScreen } from '@/features/auth/auth-screen';
 import { ME_KEY } from '@/features/users/hooks';
@@ -54,7 +55,11 @@ export function JoinPage() {
     navigate('/', { replace: true });
   }
 
-  async function apply(res: RedeemSignupLinkResponse) {
+  /**
+   * `mode` is passed in rather than read from state: the first call happens inside the
+   * mount effect, in the same tick as setContext, where the `context` closure is still null.
+   */
+  async function apply(res: RedeemSignupLinkResponse, mode?: SignupLinkMode) {
     const outcome = redeemOutcome(res);
     switch (outcome.kind) {
       case 'signed-in':
@@ -63,9 +68,15 @@ export function JoinPage() {
         // A full navigation, not a router push: the URL is IAM's, not this app's.
         window.location.assign(outcome.url);
         return;
-      case 'activate':
-        navigate(`/activate?code=${encodeURIComponent(outcome.activationKey)}`, { replace: true });
+      case 'activate': {
+        // `join` tells the activation page this came from an invitation rather than an
+        // ordinary portal invite, and in which mode — an OIDC one can continue straight
+        // into the app afterwards on the link-session cookie activation leaves behind.
+        const params = new URLSearchParams({ code: outcome.activationKey });
+        if (mode) params.set('join', mode);
+        navigate(`/activate?${params}`, { replace: true });
         return;
+      }
       case 'mfa':
         setMfaId(outcome.mfaId);
         return;
@@ -93,7 +104,7 @@ export function JoinPage() {
           setError(joinErrorMessage('invalid_link'));
           return;
         }
-        return redeemSignupLink(code).then(apply);
+        return redeemSignupLink(code).then((res) => apply(res, ctx.mode));
       })
       .catch(() => setError(joinErrorMessage('invalid_link')));
     // Runs once, guarded by `ran` — the deps its body closes over are all stable.
@@ -107,7 +118,7 @@ export function JoinPage() {
     setBusy(true);
     setError(null);
     try {
-      await apply(await completeSignupLinkMfa(mfaId, mfaCode.trim()));
+      await apply(await completeSignupLinkMfa(mfaId, mfaCode.trim()), context?.mode);
     } catch {
       setError('That code was not accepted. Check it and try again.');
       setMfaCode('');
