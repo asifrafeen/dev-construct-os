@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/misc';
 
 /**
- * Landing page for a one-click signup link — `https://<app>/join#link=<code>`.
+ * Landing page for a one-click signup link — `https://<app>/invitation#link=<code>`.
  *
  * Implicit by design: the click on the emailed link *is* the one click. Nothing here
  * asks the invitee to confirm, because there is nothing for them to decide — the
@@ -34,7 +34,7 @@ import { Input } from '@/components/ui/misc';
  * that returns to /login/callback, and PasswordRequired sends the invitee to /activate
  * to choose a password. Embedded finishes here, and MFA finishes here after a code.
  */
-export function JoinPage() {
+export function InvitationPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 

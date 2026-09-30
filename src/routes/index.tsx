@@ -6,7 +6,7 @@ import { LoginCallbackPage } from '@/pages/login-callback';
 import { SocialCallbackPage } from '@/pages/social-callback';
 import { ActivatePage } from '@/pages/activate';
 import { SignupPage } from '@/pages/signup';
-import { JoinPage } from '@/pages/join';
+import { InvitationPage } from '@/pages/invitation';
 import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { ResetPasswordPage } from '@/pages/reset-password';
 import { DashboardPage } from '@/pages/dashboard';
@@ -29,11 +29,11 @@ export const router = createBrowserRouter([
   // Self-service registration. Ends at the activation email rather than a session —
   // IAM creates the account inactive and the password is set on /activate.
   { path: '/signup', element: <SignupPage /> },
-  // One-click signup links land here as `/join#link=<code>`. Set this URL as the
-  // configuration's joinUrl in IAM (embedded mode); an OIDC-mode link points at IAM's
-  // own join page instead, and this page handles the code either way if you compose
-  // the link yourself from the generate response.
-  { path: '/join', element: <JoinPage /> },
+  // One-click signup links land here as `/invitation#link=<code>`. Set this URL as the
+  // configuration's joinUrl in IAM (embedded mode); a Blocks OIDC link points at IAM's
+  // own invitation page instead, and this page handles the code either way if you
+  // compose the link yourself from the generate response.
+  { path: '/invitation', element: <InvitationPage /> },
   // Reached from an invite email or from the link sign-up sends; not part of SSO login.
   { path: '/activate', element: <ActivatePage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
