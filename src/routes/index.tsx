@@ -17,6 +17,7 @@ import { OrganizationsPage } from '@/pages/organizations';
 import { ProfilePage } from '@/pages/profile';
 import { StoragePage } from '@/pages/storage';
 import { DataPage } from '@/pages/data';
+import { OneClickSignupPage } from '@/pages/one-click-signup';
 import { NotFoundPage } from '@/pages/not-found';
 
 export const router = createBrowserRouter([
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
       { path: 'users/:userId', element: <UserDetailPage /> },
       { path: 'organizations', element: <OrganizationsPage /> },
       { path: 'roles', element: <RolesPage /> },
+      { path: 'one-click-signup', element: <OneClickSignupPage /> },
       { path: 'data', element: <DataPage /> },
       { path: 'storage', element: <StoragePage /> },
       { path: 'profile', element: <ProfilePage /> },

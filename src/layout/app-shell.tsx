@@ -9,6 +9,7 @@ import {
   LogOut,
   ShieldCheck,
   UserCircle,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import { cn, initials } from '@/lib/utils';
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/users', label: 'Users', icon: Users },
   { to: '/roles', label: 'Roles', icon: ShieldCheck },
+  { to: '/one-click-signup', label: 'One-Click Sign-Up', icon: UserPlus },
   { to: '/organizations', label: 'Organizations', icon: Building2 },
   { to: '/data', label: 'Data', icon: Database },
   { to: '/storage', label: 'Storage', icon: FolderUp },
