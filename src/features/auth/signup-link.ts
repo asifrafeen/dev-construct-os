@@ -57,6 +57,13 @@ export interface RedeemSignupLinkResponse {
   mfaId?: string;
   userMfa?: string;
   error?: string;
+  /**
+   * Set with `error: "authentication_required"` — the invitee already has an account and
+   * the configuration demands its password (`requireExistingUserPassword`). Single-use,
+   * valid five minutes; posted back to `redeem/authenticate`.
+   */
+  redemptionId?: string;
+  maskedEmail?: string;
 
   // --- Embedded branch: the login token body ---
   token_type?: string;
@@ -137,6 +144,22 @@ export function completeSignupLinkMfa(
   });
 }
 
+/**
+ * The existing-user password leg. `captcha_code` is snake_case on this DTO, like login's;
+ * omitted unless the project runs a captcha.
+ */
+export function authenticateSignupLink(
+  redemptionId: string,
+  password: string,
+  captchaCode?: string,
+): Promise<RedeemSignupLinkResponse> {
+  return blocksFetch<RedeemSignupLinkResponse>(`${SIGNUP_LINKS}/redeem/authenticate`, {
+    method: 'POST',
+    body: { redemptionId, password, ...(captchaCode ? { captcha_code: captchaCode } : {}) },
+    noRetry: true,
+  });
+}
+
 /** What the join page should do next with a redeem response. */
 export type RedeemOutcome =
   /** Embedded mode finished: the session cookie is set and the app is signed in. */
@@ -147,6 +170,8 @@ export type RedeemOutcome =
   | { kind: 'activate'; activationKey: string }
   /** The invitee already had an account with MFA on. */
   | { kind: 'mfa'; mfaId: string; userMfa?: string }
+  /** The invitee already had an account, and the link wants its password first. */
+  | { kind: 'authenticate'; redemptionId: string; maskedEmail?: string }
   | { kind: 'error'; error: string };
 
 /**
@@ -162,6 +187,11 @@ export type RedeemOutcome =
 export function redeemOutcome(res: RedeemSignupLinkResponse): RedeemOutcome {
   const mfaId = res.mfaId ?? res.mfa_id;
   if (mfaId) return { kind: 'mfa', mfaId, userMfa: res.userMfa };
+
+  // Also rides in the `error` slot, so it too has to be read before `error` is a failure.
+  if (res.error === 'authentication_required' && res.redemptionId) {
+    return { kind: 'authenticate', redemptionId: res.redemptionId, maskedEmail: res.maskedEmail };
+  }
 
   if (res.activationKey) return { kind: 'activate', activationKey: res.activationKey };
   if (res.authorizeUrl) return { kind: 'navigate', url: res.authorizeUrl };

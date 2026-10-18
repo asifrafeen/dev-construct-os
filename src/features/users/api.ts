@@ -21,6 +21,10 @@ export interface Me {
   /** UserMfaType: 0 none, 1 TOTP, 2 email, 3 SMS, 4 WhatsApp. */
   userMfaType: number;
   attributes: Record<string, unknown>;
+  salutation?: string;
+  language?: string;
+  profileImageUrl?: string;
+  profileImageId?: string;
   /**
    * The organization the *session* is in — IAM projects this user's roles and
    * permissions for it, so it changes across an auth/switch-org. Authoritative, unlike
@@ -142,10 +146,42 @@ export const users = {
   deactivate: (userId: string) =>
     blocksFetch<unknown>(`${IAM}/users/deactivate`, { method: 'POST', body: { userId } }),
 
-  /** Swagger says GET, but the body can't ride a browser GET — the server accepts POST. */
-  timeline: (targetUserId: string, body: Record<string, unknown> = {}) =>
-    blocksFetch<Paged<Record<string, unknown>>>(`${IAM}/users/timeline`, {
+  /**
+   * Reactivate a deactivated user. Both fields are required — the reason is recorded in the
+   * user's audit trail.
+   */
+  activate: (userId: string, reason: string) =>
+    blocksFetch<unknown>(`${IAM}/users/activate`, { method: 'POST', body: { userId, reason } }),
+
+  /** Mail the activation/invite link again to a user who never activated. */
+  resendActivation: (userId: string, mailPurpose?: string) =>
+    blocksFetch<{ isSuccess?: boolean; errors?: Record<string, string> | null }>(`${IAM_BASE}/auth/resend-activation`, {
       method: 'POST',
-      body: { ItemId: targetUserId, page: 0, pageSize: 20, ...body },
+      body: { userId, ...(mailPurpose ? { mailPurpose } : {}) },
     }),
+
+  /** POST with a body — the GET `?email=` form is deprecated. */
+  exists: (email: string) => blocksFetch<unknown>(`${IAM}/users/exists`, { method: 'POST', body: { email } }),
+
+  /**
+   * Add/remove roles for many users at once, in one organization. Target either explicit
+   * `userIds` or a users-list `filter`. Preview returns the affected count; the real call
+   * is queued (202) and applies asynchronously.
+   */
+  bulkRoles: (
+    body: {
+      organizationId?: string | null;
+      addRoles?: string[];
+      removeRoles?: string[];
+      target: { userIds?: string[]; filter?: Record<string, unknown> };
+    },
+    preview: boolean,
+  ) =>
+    blocksFetch<Record<string, unknown>>(`${IAM}/users/roles/bulk${preview ? '/preview' : ''}`, {
+      method: 'POST',
+      body: { addRoles: [], removeRoles: [], ...body },
+    }),
+
+  // `users/timeline` no longer exists: a POST there now routes to UpdateUser with
+  // id="timeline". The per-user history is `security/activity` — see features/security.
 };

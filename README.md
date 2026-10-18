@@ -126,30 +126,66 @@ src/
   lib/
     env.ts             Client-safe config + same-site sanity checks
     blocks-client.ts   The one fetch wrapper: x-blocks-key, cookies, 401 refresh-and-retry
-  state/auth-store.ts  De-duplicated refreshSession(); holds no token
+    tracked-fetch.ts   fetch + an entry in the request inspector
+  state/
+    auth-store.ts      De-duplicated refreshSession(); holds no token
+    api-log.ts         In-memory request log (redacted) behind the API inspector
   features/
-    auth/              SSO initiate/callback, logout, activate, route guard
-    users/             /iam/me, user list, roles & permissions
-    orgs/              /organizations/my + persisted active-org selection
-    data/              GraphQL gateway client + makeCrud factory (see its README)
-    files/             Pre-signed-URL upload pipeline
-  pages/               login, callback, activate, dashboard, users, data, storage, profile
-  layout/app-shell.tsx Sidebar, header, org switcher, sign-out
+    auth/              Password/social/hosted login, MFA challenge, captcha, signup links
+    users/ roles/ permissions/ orgs/ signup-links/ security/ iam-settings/   IAM
+    data/              Gateway client, makeCrud, schema metadata → generic CRUD
+    files/             DMS: presign/PUT/complete upload, versions, directories, objects, ACLs
+    localization/      Runtime dictionaries, I18nProvider, language switcher
+    notifications/     Notifier inbox + SignalR hub (live events)
+    mail/              Templated send, mailbox, templates
+    logic/             Workflows, webhooks, executions, scheduler, functions, proxies
+    agents/            Agent list, SSE chat, conversations, voice session
+    utilities/         Magic links, sequences, geolocation, PDF/doc jobs, SMS, payments
+    monitor/           Heartbeat sender + monitor CRUD
+    os/                LMT traces/logs, secret store
+    playground/        Request presets for every service
+  pages/               One screen per area (see Routes)
+  layout/app-shell.tsx Grouped sidebar, org + language switchers, bell, inspector
 ```
 
 ## Routes
 
-| Path | Auth | Purpose |
+| Path | Service | What it exercises |
 |---|---|---|
-| `/login` | public | Password form + social buttons + hosted-Blocks button |
-| `/callback` | public | Finalizes embedded social login |
-| `/login/callback` | public | Finalizes hosted login — must match the registered `redirectUri` |
-| `/activate` | public | Invite-and-activate only; not part of normal login |
-| `/` | required | Dashboard — session, roles, permissions |
-| `/users` | required | Project users |
-| `/data` | required | Gateway console for running GraphQL against your schemas |
-| `/storage` | required | Pre-signed-URL file upload |
-| `/profile` | required | Edit your own profile |
+| `/login`, `/callback`, `/login/callback`, `/signup`, `/invitation`, `/activate`, `/forgot-password`, `/reset-password` | IAM | All sign-in/up flows (public) |
+| `/` | — | Dashboard: session, roles, a map of every test area |
+| `/health` | all | One probe per service — reachable vs. permitted vs. down |
+| `/users`, `/users/:id` | IAM | List, roles, **bulk roles**, activate/deactivate, resend activation, activity |
+| `/roles`, `/permissions` | IAM | Role + permission CRUD, resource groups, feature catalogue |
+| `/organizations`, `/one-click-signup` | IAM | Orgs, switch-org, signup-link configurations |
+| `/security` | IAM | Change password (live policy check), TOTP, MFA method, sessions, activity, sign out everywhere |
+| `/iam-settings` | IAM | Sign-up policy, org config (auto-join), MFA policy, client credentials, IdPs, OIDC clients |
+| `/profile` | IAM + Data | Profile, salutation, language, photo (uploaded to DMS) |
+| `/data` | Data | Schema browser → generic CRUD for any schema, bulk ops, GraphQL console, validations, regex, mock data |
+| `/storage` | Data | File manager: folders, uploads, versions, rename/move/copy, trash, sharing, access policies |
+| `/localization` | Localization | Languages/modules (public + tenant), dictionary browser, key lookup, missing keys |
+| `/notifications` | Logic | Inbox, send to users/roles/orgs/filters, live hub events |
+| `/mail` | Logic + OS | Templated send (+attachments), mailbox, templates, mail servers |
+| `/workflows` | Logic | Workflows, publish/versions, webhook trigger (live + draft), executions + logs, scheduler, functions, proxies |
+| `/agents` | Agents | Streaming chat, conversation history, voice session token |
+| `/utilities` | Utilities | Magic links, sequences, geolocation, HTML→PDF, document jobs, SMS, payments, subscriptions |
+| `/build` | Release | Bundle vs. live `/version.json`, every injected `VITE_*` value |
+| `/monitor` | Monitor | Heartbeat sender, heartbeat/request monitor CRUD, incidents, response time |
+| `/observability` | OS | LMT traces (span waterfall) and logs for this project |
+| `/secrets` | OS | Secret store: create, read value, rotate, lock, soft delete, audit |
+| `/api-log` | — | Request inspector: every call, redacted, with trace ids → Observability |
+| `/playground` | all | Any request as the signed-in user, with presets per service |
+
+Static endpoints served by nginx for Monitor/Release checks: `GET /healthz` (`{"status":"ok"}`)
+and `GET /version.json` (build metadata, never cached).
+
+## Release build args
+
+Release passes `ci_build=<env>` (from the branch) plus every key in the repo's secret set
+as `--build-arg`. Kaniko drops args the Dockerfile does not declare, so every variable the
+app reads is declared there; `package.json` has a `build:<env>` script for each environment
+Release can map a branch to (`dev`, `test`, `stg`, `iat`, `uat`, `prodshadow`, `preprod`,
+`prod`). See `.env.example` for the optional knobs.
 
 ## Deploying
 

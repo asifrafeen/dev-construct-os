@@ -1,5 +1,6 @@
 import { BlocksError, blocksFetch } from '@/lib/blocks-client';
 import { BLOCKS, IAM_BASE } from '@/lib/env';
+import { trackedFetch } from '@/lib/tracked-fetch';
 import {
   accountErrorFromError,
   assertAccountOk,
@@ -479,7 +480,7 @@ export interface ActivateResult {
  * to the signup-link configuration.
  */
 export async function activate(input: ActivateInput): Promise<ActivateResult> {
-  const res = await fetch(`${IAM_BASE}/auth/activate`, {
+  const res = await trackedFetch(`${IAM_BASE}/auth/activate`, {
     method: 'POST',
     // Activating a one-click signup link also mints the restricted link-session cookie,
     // and that cookie is what lets /oidc/authorize sign the invitee in without asking for

@@ -130,7 +130,11 @@ export function mfaChallengeFromError(error: unknown): MfaChallenge | null {
  * caller re-reads /iam/me rather than trusting anything in this response body.
  *
  * `captchaCode` carries the answered challenge when the project configured one —
- * see features/auth/captcha.ts. Omitted rather than sent empty: IAM treats the field
+ * see features/auth/captcha.ts. On the wire it is `captcha_code`: the login DTO pins
+ * snake_case with `[JsonPropertyName]` like its mfa_* siblings, so a camelCase key is
+ * silently dropped and the login keeps answering `captcha_enabled` however often the
+ * challenge is solved. (Signup, recover and activate *are* camelCase — this is the
+ * odd one out.) Omitted rather than sent empty: IAM treats the field
  * being present as a claim that a challenge was solved, and rejects a blank one.
  * Without it a captcha-protected project answers `captcha_enabled`, which the login
  * page turns back into a challenge.
@@ -143,7 +147,7 @@ export async function loginWithPassword(
   try {
     const res = await blocksFetch<unknown>(`${IAM_BASE}/auth/login`, {
       method: 'POST',
-      body: { username, password, ...(captchaCode ? { captchaCode } : {}) },
+      body: { username, password, ...(captchaCode ? { captcha_code: captchaCode } : {}) },
       noRetry: true, // a 401 here means bad credentials, not an expired session
     });
     // An MFA account answers with a challenge, not a session. IAM sends it as a 200

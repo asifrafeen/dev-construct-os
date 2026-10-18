@@ -1,5 +1,6 @@
 import { BLOCKS } from '@/lib/env';
 import { useAuthStore } from '@/state/auth-store';
+import { trackedFetch } from '@/lib/tracked-fetch';
 
 /**
  * The one fetch wrapper every Blocks call goes through.
@@ -65,7 +66,7 @@ export async function blocksFetch<T>(url: string, init: BlocksRequest = {}): Pro
   Object.assign(finalHeaders, headers as Record<string, string> | undefined);
 
   const send = (): Promise<Response> =>
-    fetch(url, {
+    trackedFetch(url, {
       ...rest,
       credentials: 'include', // the SSO session cookie set by /idp/callback
       headers: finalHeaders,

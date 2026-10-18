@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { users as usersApi, type BlocksUser } from '@/features/users/api';
-import { useUserTimeline } from '@/features/users/hooks';
+import { ActivityCard } from '@/pages/security';
 import { AssignRolesModal } from '@/features/users/assign-roles-modal';
 import { useMyOrgsWithActive } from '@/features/orgs/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { displayName, formatDate, initials } from '@/lib/utils';
 
@@ -28,8 +28,13 @@ export function UserDetailPage() {
     select: (r) => (r.data ?? null) as BlocksUser | null,
   });
 
-  const timeline = useUserTimeline(userId);
   const user = query.data;
+  const qc = useQueryClient();
+  const [reason, setReason] = useState('');
+  const refresh = () => qc.invalidateQueries({ queryKey: ['iam', 'users'] });
+  const activate = useMutation({ mutationFn: () => usersApi.activate(userId as string, reason.trim()), onSuccess: refresh });
+  const deactivate = useMutation({ mutationFn: () => usersApi.deactivate(userId as string), onSuccess: refresh });
+  const resend = useMutation({ mutationFn: () => usersApi.resendActivation(userId as string) });
 
   return (
     <div className="space-y-6">
@@ -127,23 +132,44 @@ export function UserDetailPage() {
 
           <Card className="lg:col-span-3">
             <CardHeader>
-              <CardTitle className="text-base">Activity</CardTitle>
-              <CardDescription>POST /iam/v4/iam/users/timeline</CardDescription>
+              <CardTitle className="text-base">Account state</CardTitle>
+              <CardDescription>
+                POST /iam/v4/iam/users/activate · /users/deactivate · /auth/resend-activation
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              {timeline.isPending ? (
-                <Spinner />
-              ) : timeline.isError ? (
-                <ErrorNote error={timeline.error} />
-              ) : !timeline.data?.data?.length ? (
-                <EmptyState title="No activity recorded" />
-              ) : (
-                <pre className="max-h-72 overflow-auto rounded-md bg-muted p-3 font-mono text-xs">
-                  {JSON.stringify(timeline.data.data, null, 2)}
-                </pre>
-              )}
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {user.active ? (
+                  <Button variant="outline" size="sm" disabled={deactivate.isPending} onClick={() => deactivate.mutate()}>
+                    Deactivate
+                  </Button>
+                ) : (
+                  <>
+                    <Input
+                      className="max-w-xs"
+                      placeholder="Reason for reactivating (required)"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                    />
+                    <Button size="sm" disabled={!reason.trim() || activate.isPending} onClick={() => activate.mutate()}>
+                      Activate
+                    </Button>
+                  </>
+                )}
+                {!user.isVerified && (
+                  <Button variant="outline" size="sm" disabled={resend.isPending} onClick={() => resend.mutate()}>
+                    Resend activation email
+                  </Button>
+                )}
+              </div>
+              {resend.isSuccess && <p className="text-sm text-emerald-600">Activation email sent.</p>}
+              {[activate, deactivate, resend].map((m, i) => m.isError && <ErrorNote key={i} error={m.error} />)}
             </CardContent>
           </Card>
+
+          <div className="lg:col-span-3">
+            <ActivityCard userId={user.itemId} title="Activity" />
+          </div>
 
           <Card className="lg:col-span-3">
             <CardHeader>

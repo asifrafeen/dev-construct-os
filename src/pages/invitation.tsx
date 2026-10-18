@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Blocks, KeyRound, Loader2, ShieldAlert } from 'lucide-react';
 import {
+  authenticateSignupLink,
   completeSignupLinkMfa,
   getSignupLinkContext,
   joinErrorMessage,
@@ -41,6 +42,8 @@ export function InvitationPage() {
   const [context, setContext] = useState<SignupLinkContext | null>(null);
   const [mfaId, setMfaId] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
+  const [auth, setAuth] = useState<{ redemptionId: string; maskedEmail?: string } | null>(null);
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,7 +87,11 @@ export function InvitationPage() {
         return;
       }
       case 'mfa':
+        setAuth(null);
         setMfaId(outcome.mfaId);
+        return;
+      case 'authenticate':
+        setAuth({ redemptionId: outcome.redemptionId, maskedEmail: outcome.maskedEmail });
         return;
       case 'error':
         setError(joinErrorMessage(outcome.error));
@@ -133,6 +140,23 @@ export function InvitationPage() {
     }
   }
 
+  async function onAuthenticate(event: FormEvent) {
+    event.preventDefault();
+    if (!auth) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      await apply(await authenticateSignupLink(auth.redemptionId, password), context?.mode);
+    } catch {
+      // The redemption id is single-use; a wrong password spends it, so start over.
+      setError('That password was not accepted. Open the invitation link again to retry.');
+    } finally {
+      setBusy(false);
+      setPassword('');
+    }
+  }
+
   if (error) {
     return (
       <AuthScreen
@@ -162,6 +186,31 @@ export function InvitationPage() {
             onChange={(e) => setMfaCode(e.target.value)}
           />
           <Button type="submit" className="w-full" disabled={busy || !mfaCode.trim()}>
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Continue
+          </Button>
+        </form>
+      </AuthScreen>
+    );
+  }
+
+  if (auth) {
+    return (
+      <AuthScreen
+        icon={KeyRound}
+        title="Sign in to accept"
+        description={`You already have an account${auth.maskedEmail ? ` (${auth.maskedEmail})` : ''}. Enter its password to join.`}
+      >
+        <form onSubmit={onAuthenticate} className="space-y-3">
+          <Input
+            autoFocus
+            type="password"
+            autoComplete="current-password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <Button type="submit" className="w-full" disabled={busy || !password}>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Continue
           </Button>

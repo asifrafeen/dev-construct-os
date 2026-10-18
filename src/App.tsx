@@ -3,6 +3,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RouterProvider } from 'react-router-dom';
 import { router } from '@/routes';
 import { UnauthorizedError } from '@/lib/blocks-client';
+import { I18nProvider } from '@/features/localization/i18n';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,7 +19,10 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      {/* Inside the query client (it fetches), outside the router (login is translated too). */}
+      <I18nProvider>
+        <RouterProvider router={router} />
+      </I18nProvider>
       {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   );

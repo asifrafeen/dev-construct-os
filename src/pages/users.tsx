@@ -4,6 +4,7 @@ import { ShieldCheck } from 'lucide-react';
 import type { BlocksUser } from '@/features/users/api';
 import { useUsers } from '@/features/users/hooks';
 import { AssignRolesModal } from '@/features/users/assign-roles-modal';
+import { BulkRolesModal } from '@/features/users/bulk-roles-modal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,8 @@ export function UsersPage() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const [assigning, setAssigning] = useState<BlocksUser | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulk, setBulk] = useState(false);
   const { data, isPending, isError, error } = useUsers({}, page, PAGE_SIZE);
 
   const rows = (data?.data ?? []).filter((u) => {
@@ -49,6 +52,10 @@ export function UsersPage() {
             <CardTitle className="text-base">Project members</CardTitle>
             <CardDescription>{total} total</CardDescription>
           </div>
+          <Button variant="outline" size="sm" onClick={() => setBulk(true)}>
+            <ShieldCheck className="h-4 w-4" />
+            Bulk roles{selected.length ? ` (${selected.length})` : ''}
+          </Button>
         </CardHeader>
 
         <CardContent>
@@ -66,6 +73,16 @@ export function UsersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="w-8 px-2 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all on this page"
+                        checked={rows.length > 0 && rows.every((u) => selected.includes(u.itemId))}
+                        onChange={(e) =>
+                          setSelected(e.target.checked ? Array.from(new Set([...selected, ...rows.map((u) => u.itemId)])) : selected.filter((id) => !rows.some((u) => u.itemId === id)))
+                        }
+                      />
+                    </th>
                     <th className="px-2 py-2 font-medium">User</th>
                     <th className="px-2 py-2 font-medium">Status</th>
                     <th className="px-2 py-2 font-medium">Roles</th>
@@ -76,6 +93,14 @@ export function UsersPage() {
                 <tbody>
                   {rows.map((u) => (
                     <tr key={u.itemId} className="border-b last:border-0">
+                      <td className="px-2 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label="Select user"
+                          checked={selected.includes(u.itemId)}
+                          onChange={(e) => setSelected(e.target.checked ? [...selected, u.itemId] : selected.filter((id) => id !== u.itemId))}
+                        />
+                      </td>
                       <td className="px-2 py-3">
                         <div className="flex items-center gap-3">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
@@ -156,6 +181,8 @@ export function UsersPage() {
           </Button>
         </div>
       </div>
+
+      {bulk && <BulkRolesModal selectedIds={selected} onClose={() => setBulk(false)} />}
 
       {assigning && (
         <AssignRolesModal

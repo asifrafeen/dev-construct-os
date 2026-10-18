@@ -10,15 +10,15 @@ import { InvitationPage } from '@/pages/invitation';
 import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { ResetPasswordPage } from '@/pages/reset-password';
 import { DashboardPage } from '@/pages/dashboard';
-import { UsersPage } from '@/pages/users';
-import { RolesPage } from '@/pages/roles';
-import { UserDetailPage } from '@/pages/user-detail';
-import { OrganizationsPage } from '@/pages/organizations';
-import { ProfilePage } from '@/pages/profile';
-import { StoragePage } from '@/pages/storage';
-import { DataPage } from '@/pages/data';
-import { OneClickSignupPage } from '@/pages/one-click-signup';
 import { NotFoundPage } from '@/pages/not-found';
+
+/**
+ * Route-level code splitting: each signed-in screen loads on first visit, so the sign-in
+ * flow and the dashboard don't download every test page up front.
+ */
+const page =
+  <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
+  async () => ({ Component: (await load())[name] });
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -50,16 +50,36 @@ export const router = createBrowserRouter([
         <AppShell />
       </RequireAuth>
     ),
+    // Shown while a lazily loaded screen downloads on a cold page load.
+    HydrateFallback: () => (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>
+    ),
     children: [
       { index: true, element: <DashboardPage /> },
-      { path: 'users', element: <UsersPage /> },
-      { path: 'users/:userId', element: <UserDetailPage /> },
-      { path: 'organizations', element: <OrganizationsPage /> },
-      { path: 'roles', element: <RolesPage /> },
-      { path: 'one-click-signup', element: <OneClickSignupPage /> },
-      { path: 'data', element: <DataPage /> },
-      { path: 'storage', element: <StoragePage /> },
-      { path: 'profile', element: <ProfilePage /> },
+      { path: 'users', lazy: page(() => import('@/pages/users'), 'UsersPage') },
+      { path: 'users/:userId', lazy: page(() => import('@/pages/user-detail'), 'UserDetailPage') },
+      { path: 'organizations', lazy: page(() => import('@/pages/organizations'), 'OrganizationsPage') },
+      { path: 'roles', lazy: page(() => import('@/pages/roles'), 'RolesPage') },
+      { path: 'one-click-signup', lazy: page(() => import('@/pages/one-click-signup'), 'OneClickSignupPage') },
+      { path: 'data', lazy: page(() => import('@/pages/data'), 'DataPage') },
+      { path: 'storage', lazy: page(() => import('@/pages/storage'), 'StoragePage') },
+      { path: 'profile', lazy: page(() => import('@/pages/profile'), 'ProfilePage') },
+      { path: 'health', lazy: page(() => import('@/pages/health'), 'HealthPage') },
+      { path: 'permissions', lazy: page(() => import('@/pages/permissions'), 'PermissionsPage') },
+      { path: 'security', lazy: page(() => import('@/pages/security'), 'SecurityPage') },
+      { path: 'iam-settings', lazy: page(() => import('@/pages/iam-settings'), 'IamSettingsPage') },
+      { path: 'localization', lazy: page(() => import('@/pages/localization'), 'LocalizationPage') },
+      { path: 'notifications', lazy: page(() => import('@/pages/notifications'), 'NotificationsPage') },
+      { path: 'mail', lazy: page(() => import('@/pages/mail'), 'MailPage') },
+      { path: 'workflows', lazy: page(() => import('@/pages/workflows'), 'WorkflowsPage') },
+      { path: 'agents', lazy: page(() => import('@/pages/agents'), 'AgentsPage') },
+      { path: 'utilities', lazy: page(() => import('@/pages/utilities'), 'UtilitiesPage') },
+      { path: 'build', lazy: page(() => import('@/pages/build-info'), 'BuildInfoPage') },
+      { path: 'monitor', lazy: page(() => import('@/pages/monitor'), 'MonitorPage') },
+      { path: 'observability', lazy: page(() => import('@/pages/observability'), 'ObservabilityPage') },
+      { path: 'secrets', lazy: page(() => import('@/pages/secrets'), 'SecretsPage') },
+      { path: 'api-log', lazy: page(() => import('@/pages/api-log'), 'ApiLogPage') },
+      { path: 'playground', lazy: page(() => import('@/pages/playground'), 'PlaygroundPage') },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

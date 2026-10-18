@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { BLOCKS, IAM_BASE } from '@/lib/env';
+import { trackedFetch } from '@/lib/tracked-fetch';
 
 /**
  * Session renewal for the cookie-backed model.
@@ -146,7 +147,7 @@ let inFlight: Promise<RefreshResponse> | null = null;
 async function renew(): Promise<RefreshResponse> {
   const { url, headers, body } = refreshRequest();
 
-  const res = await fetch(url, {
+  const res = await trackedFetch(url, {
     method: 'POST',
     credentials: 'include', // sends the refresh cookie, and applies the rotated one
     headers: { 'x-blocks-key': BLOCKS.projectKey, ...headers },

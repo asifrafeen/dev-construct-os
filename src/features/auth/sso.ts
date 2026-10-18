@@ -1,4 +1,5 @@
 import { BLOCKS, IAM_BASE, withoutPort } from '@/lib/env';
+import { trackedFetch } from '@/lib/tracked-fetch';
 import { markSignedIn } from '@/state/auth-store';
 import { describeAuthError } from './errors';
 
@@ -29,7 +30,7 @@ export async function startLogin(): Promise<never> {
 
   // x-blocks-key must be sent in BOTH the query string and the header — omitting
   // either makes initiate fail.
-  const res = await fetch(url, { headers: { 'x-blocks-key': BLOCKS.projectKey } });
+  const res = await trackedFetch(url, { headers: { 'x-blocks-key': BLOCKS.projectKey } });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     throw new Error(`initiate failed (${res.status}): ${detail || 'no response body'}`);
@@ -64,7 +65,7 @@ export async function finishLogin(search: string): Promise<string | null> {
     throw new Error('The sign-in response was missing its code and state. Start again from the sign-in page.');
   }
 
-  const res = await fetch(
+  const res = await trackedFetch(
     `${IAM_BASE}/idp/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
     { credentials: 'include', headers: { 'x-blocks-key': BLOCKS.projectKey } },
   );

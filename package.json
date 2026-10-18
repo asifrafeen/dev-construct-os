@@ -10,6 +10,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:dev": "tsc -b && vite build --mode dev",
+    "build:test": "tsc -b && vite build --mode test",
+    "build:stg": "tsc -b && vite build --mode stg",
+    "build:iat": "tsc -b && vite build --mode iat",
+    "build:uat": "tsc -b && vite build --mode uat",
+    "build:prodshadow": "tsc -b && vite build --mode prodshadow",
+    "build:preprod": "tsc -b && vite build --mode preprod",
     "build:prod": "tsc -b && vite build --mode prod",
     "build:production": "tsc -b && vite build --mode production",
     "preview": "vite preview",
@@ -20,6 +26,7 @@
     "cert": "bash scripts/setup-https-cert.sh"
   },
   "dependencies": {
+    "@microsoft/signalr": "^10.0.11",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.7",

@@ -6,6 +6,50 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge, Spinner } from '@/components/ui/misc';
 import { formatDate } from '@/lib/utils';
 
+/** Every area of the platform this app can exercise, by the service that backs it. */
+const AREAS: { service: string; items: [string, string, string][] }[] = [
+  {
+    service: 'IAM',
+    items: [
+      ['/users', 'Users', 'Invite, roles, bulk roles, activate, activity'],
+      ['/roles', 'Roles', 'Role CRUD and permission assignment'],
+      ['/permissions', 'Permissions', 'Permission CRUD, groups, features'],
+      ['/organizations', 'Organizations', 'Create, edit, switch'],
+      ['/security', 'Security', 'Password, TOTP, sessions, activity'],
+      ['/iam-settings', 'IAM settings', 'Sign-up, MFA policy, client credentials'],
+    ],
+  },
+  {
+    service: 'Data',
+    items: [
+      ['/data', 'Data gateway', 'Schema-driven CRUD, GraphQL, validations'],
+      ['/storage', 'Storage', 'Folders, uploads, versions, sharing, trash'],
+    ],
+  },
+  {
+    service: 'Services',
+    items: [
+      ['/localization', 'Localization', 'Languages, dictionaries, missing keys'],
+      ['/notifications', 'Notifications', 'Inbox, send, live hub events'],
+      ['/mail', 'Mail', 'Templated send, mailbox, templates'],
+      ['/workflows', 'Workflows', 'Webhooks, executions, scheduler, functions'],
+      ['/agents', 'AI agents', 'Streaming chat, history, voice session'],
+      ['/utilities', 'Utilities', 'Magic links, PDF, SMS, payments'],
+    ],
+  },
+  {
+    service: 'Platform',
+    items: [
+      ['/build', 'Build & release', 'Injected build args, live version'],
+      ['/monitor', 'Monitor', 'Heartbeat and request monitors'],
+      ['/observability', 'Observability', 'Traces and logs for this project'],
+      ['/secrets', 'Secrets', 'Secret store lifecycle'],
+      ['/health', 'Service health', 'One probe per service'],
+      ['/playground', 'API playground', 'Any request, as you'],
+    ],
+  },
+];
+
 function Stat({
   label,
   value,
@@ -63,6 +107,24 @@ export function DashboardPage() {
         />
         <Stat label="Your roles" value={String(me?.roles?.length ?? 0)} icon={Database} to="/data" />
         <Stat label="Storage" value="DMS" icon={FolderUp} to="/storage" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {AREAS.map((area) => (
+          <Card key={area.service}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm uppercase tracking-wide text-muted-foreground">{area.service}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              {area.items.map(([to, label, hint]) => (
+                <Link key={to} to={to} className="block rounded-md px-2 py-1.5 hover:bg-accent">
+                  <span className="text-sm font-medium">{label}</span>
+                  <span className="block text-xs text-muted-foreground">{hint}</span>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

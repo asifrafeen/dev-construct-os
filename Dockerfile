@@ -26,13 +26,41 @@ ARG VITE_BLOCKS_HOSTED_LOGIN=true
 # --build-arg. Empty unless the pipeline supplies one.
 ARG VITE_BLOCKS_EXTRA_ARG
 
+# Blocks Release turns every key in the repo's secret set (`blocks release secrets
+# sync`) into a --build-arg — but Kaniko silently drops any arg the Dockerfile does not
+# declare. So every optional knob the app reads is declared here, empty by default, and
+# shows up on the Build & release page when the pipeline supplies it.
+#
+# Release injects no build metadata of its own: add VITE_GIT_SHA / VITE_BUILD_ID /
+# VITE_GIT_BRANCH to the secret set if you want them stamped into /version.json.
+ARG VITE_GIT_SHA
+ARG VITE_GIT_BRANCH
+ARG VITE_BUILD_ID
+ARG VITE_BLOCKS_I18N_MODULES
+ARG VITE_BLOCKS_NOTIFIER_REALTIME
+ARG VITE_BLOCKS_NOTIFY_METHODS
+ARG VITE_BLOCKS_HEARTBEAT_ID
+ARG VITE_BLOCKS_HEARTBEAT_INTERVAL
+ARG VITE_BLOCKS_MONITOR_PATH
+
 ENV VITE_BLOCKS_API_URL=${VITE_BLOCKS_API_URL}
 ENV VITE_BLOCKS_PROJECT_KEY=${VITE_BLOCKS_PROJECT_KEY}
 ENV VITE_BLOCKS_OIDC_CLIENT_ID=${VITE_BLOCKS_OIDC_CLIENT_ID}
 ENV VITE_BLOCKS_REDIRECT_URI=${VITE_BLOCKS_REDIRECT_URI}
 ENV VITE_BLOCKS_HOSTED_LOGIN=${VITE_BLOCKS_HOSTED_LOGIN}
 ENV VITE_BLOCKS_EXTRA_ARG=${VITE_BLOCKS_EXTRA_ARG}
+ENV VITE_GIT_SHA=${VITE_GIT_SHA}
+ENV VITE_GIT_BRANCH=${VITE_GIT_BRANCH}
+ENV VITE_BUILD_ID=${VITE_BUILD_ID}
+ENV VITE_BLOCKS_I18N_MODULES=${VITE_BLOCKS_I18N_MODULES}
+ENV VITE_BLOCKS_NOTIFIER_REALTIME=${VITE_BLOCKS_NOTIFIER_REALTIME}
+ENV VITE_BLOCKS_NOTIFY_METHODS=${VITE_BLOCKS_NOTIFY_METHODS}
+ENV VITE_BLOCKS_HEARTBEAT_ID=${VITE_BLOCKS_HEARTBEAT_ID}
+ENV VITE_BLOCKS_HEARTBEAT_INTERVAL=${VITE_BLOCKS_HEARTBEAT_INTERVAL}
+ENV VITE_BLOCKS_MONITOR_PATH=${VITE_BLOCKS_MONITOR_PATH}
 
+# Release maps the branch to ci_build (dev, test, stg, iat, uat, prodshadow, preprod,
+# prod) — package.json has a build:<env> script for each, so no branch breaks the build.
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build:${ci_build}
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
