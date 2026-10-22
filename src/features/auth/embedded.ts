@@ -1,6 +1,5 @@
 import { BlocksError, blocksFetch } from '@/lib/blocks-client';
 import { IAM_BASE, withoutPort } from '@/lib/env';
-import { markSignedIn } from '@/state/auth-store';
 
 /**
  * Embedded ("implicit") login — the app owns the login screen.
@@ -161,8 +160,6 @@ export async function loginWithPassword(
     throw error;
   }
 
-  // From now on a 401 is renewable rather than terminal — see state/auth-store.
-  markSignedIn();
   return { status: 'signed-in' };
 }
 
@@ -191,7 +188,6 @@ export async function submitMfaCode(challenge: MfaChallenge, mfaCode: string): P
     },
     noRetry: true, // a 401 is a wrong code, not an expired session
   });
-  markSignedIn();
 }
 
 /**
@@ -244,7 +240,6 @@ export async function finishSocialLogin(search: string): Promise<void> {
   // Only drop the marker once the session actually exists — the sign-up path
   // below still needs to know which provider vouched for this person.
   sessionStorage.removeItem(PROVIDER_KEY);
-  markSignedIn();
 }
 
 /**

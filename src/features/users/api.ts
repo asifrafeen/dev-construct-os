@@ -1,6 +1,5 @@
 import { blocksFetch, UnauthorizedError } from '@/lib/blocks-client';
 import { IAM_BASE } from '@/lib/env';
-import { markSignedIn } from '@/state/auth-store';
 
 const IAM = `${IAM_BASE}/iam`;
 
@@ -67,7 +66,6 @@ export const users = {
   meOrNull: async (): Promise<Me | null> => {
     try {
       const { data } = await blocksFetch<{ data: Me }>(`${IAM}/me`);
-      markSignedIn(); // a live session, however it was established
       return data;
     } catch (error) {
       if (error instanceof UnauthorizedError) return null;

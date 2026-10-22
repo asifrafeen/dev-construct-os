@@ -9,7 +9,6 @@ import {
 } from '@/features/auth/api';
 import { startLogin } from '@/features/auth/sso';
 import { ME_KEY } from '@/features/users/hooks';
-import { markSignedIn } from '@/state/auth-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorNote, Input } from '@/components/ui/misc';
@@ -59,7 +58,6 @@ export function ActivatePage() {
       }
 
       if (activatedWithSession(res)) {
-        markSignedIn();
         await qc.invalidateQueries({ queryKey: ME_KEY });
         navigate(safeForwardedTo(res.forwardedTo) ?? '/', { replace: true });
         return;

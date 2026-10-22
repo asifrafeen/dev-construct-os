@@ -1,6 +1,5 @@
 import { BLOCKS, IAM_BASE, withoutPort } from '@/lib/env';
 import { trackedFetch } from '@/lib/tracked-fetch';
-import { markSignedIn } from '@/state/auth-store';
 import { describeAuthError } from './errors';
 
 /**
@@ -73,9 +72,6 @@ export async function finishLogin(search: string): Promise<string | null> {
     const detail = await res.text().catch(() => '');
     throw new Error(describeAuthError(res.status, detail));
   }
-
-  // The session cookie now exists, so a later 401 is renewable — see state/auth-store.
-  markSignedIn();
 
   // Server-supplied, but it arrives through a URL: anything not a relative in-app path is
   // dropped rather than handed to a navigation.

@@ -16,7 +16,6 @@ import {
 } from '@/features/auth/signup-link';
 import { AuthScreen } from '@/features/auth/auth-screen';
 import { ME_KEY } from '@/features/users/hooks';
-import { markSignedIn } from '@/state/auth-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/misc';
 
@@ -59,7 +58,6 @@ export function InvitationPage() {
    * redirect, so it comes back in the token body.
    */
   async function land(forwardedTo: string | null) {
-    markSignedIn();
     await qc.invalidateQueries({ queryKey: ME_KEY });
     navigate(forwardedTo ?? '/', { replace: true });
   }

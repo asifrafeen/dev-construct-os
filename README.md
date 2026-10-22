@@ -115,9 +115,11 @@ Three rules the whole client layer is built on:
    make every authenticated call 401 with no obvious cause.
 
 A 401 triggers one session refresh and one retry;
-a second 401 means genuinely signed out and routes to `/login`. Renewal currently goes to
-`POST /iam/v4/oidc/token` (form-encoded, `grant_type=refresh_token`) as a temporary stand-in for
-`POST /iam/v4/auth/refresh` — see `REFRESH_ENDPOINT` in `src/state/auth-store.ts` to switch back.
+a second 401 means genuinely signed out and routes to `/login`. Renewal goes to
+`POST /iam/v4/oidc/token` (form-encoded, `grant_type=refresh_token&client_id=<VITE_BLOCKS_OIDC_CLIENT_ID>`).
+A session started by the in-app forms has no OIDC client, which `oidc/token` refuses as
+`invalid_client`, so that refusal falls back to `POST /iam/v4/auth/refresh` — see
+`src/state/auth-store.ts`.
 
 ## Layout
 
