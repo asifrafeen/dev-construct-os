@@ -31,6 +31,15 @@ export interface SecuritySummary {
 /** 0 Active, 1 Expired, 2 Revoked. */
 export const SESSION_STATUS = ['Active', 'Expired', 'Revoked'];
 
+export type SessionStatusName = 'Active' | 'Expired' | 'Revoked';
+
+/**
+ * The session list sends the status as its number; session details send it by name
+ * (those DTOs carry a JsonStringEnumConverter, the list's does not). Either reads here.
+ */
+export const sessionStatusLabel = (status?: number | string | null): string =>
+  typeof status === 'number' ? (SESSION_STATUS[status] ?? String(status)) : (status ?? 'Active');
+
 export interface SessionRow {
   sessionId: string;
   createdAt?: string;
@@ -38,13 +47,76 @@ export interface SessionRow {
   absoluteExpiry?: string;
   idleExpiry?: string;
   isCurrent?: boolean;
-  status?: number;
+  status?: number | SessionStatusName;
   primaryDeviceName?: string;
   primaryOperatingSystem?: string;
   primaryBrowser?: string;
   primaryIpAddress?: string;
   applicationCount?: number;
   clientIds?: string[];
+}
+
+/** GET security/sessions/{id} — one session, the apps riding on it, and what happened to it. */
+export interface SessionDetails {
+  overview?: {
+    sessionId?: string;
+    status?: number | SessionStatusName;
+    isCurrent?: boolean;
+    deviceName?: string | null;
+    deviceModel?: string | null;
+    operatingSystem?: string | null;
+    browser?: string | null;
+    ipAddress?: string | null;
+    location?: string | null;
+    clientIds?: string[] | null;
+    organizationIds?: string[] | null;
+    startedAt?: string;
+    lastActivityAt?: string;
+    absoluteExpiry?: string;
+    idleExpiry?: string;
+  } | null;
+  applications?: {
+    clientId?: string | null;
+    clientName?: string | null;
+    organizationId?: string | null;
+    grantType?: string | null;
+    status?: number | SessionStatusName;
+    expiresAt?: string;
+    lastRotationAt?: string | null;
+    rotationCount?: number;
+    revokedAt?: string | null;
+    revokeReason?: string | null;
+  }[] | null;
+  timeline?: {
+    /** Auth, Refresh, Revocation. */
+    type?: number | string;
+    at?: string;
+    event?: string | null;
+    outcome?: string | null;
+    reasonCode?: string | null;
+    ipAddress?: string | null;
+    deviceName?: string | null;
+    clientId?: string | null;
+  }[] | null;
+}
+
+/** The revoke endpoints answer 200 whether or not the session was still live. */
+export interface RevokeResult {
+  sessionId?: string | null;
+  alreadyRevoked?: boolean;
+  revokedAt?: string | null;
+  reason?: string | null;
+  revokedRefreshTokens?: number;
+  warnings?: string[];
+}
+
+/** Where an activity happened, as IAM captured it from the request. */
+export interface ActivityContext {
+  ipAddress?: string;
+  deviceName?: string;
+  deviceType?: string;
+  userAgent?: string;
+  deviceInformation?: { browser?: string; os?: string; device?: string; brand?: string; model?: string };
 }
 
 export interface ActivityItem {
@@ -61,7 +133,7 @@ export interface ActivityItem {
   clientId?: string;
   entity?: string;
   entityId?: string;
-  context?: unknown;
+  context?: ActivityContext | null;
   createdDate?: string;
 }
 
@@ -107,13 +179,13 @@ export const security = {
   summary: (uid?: string) => blocksFetch<SecuritySummary>(`${SEC}/summary${uidQs(uid)}`),
   sessions: (uid?: string) => blocksFetch<SessionRow[]>(`${SEC}/sessions${uidQs(uid)}`),
   session: (sessionId: string, uid?: string) =>
-    blocksFetch<Record<string, unknown>>(`${SEC}/sessions/${encodeURIComponent(sessionId)}${uidQs(uid)}`),
+    blocksFetch<SessionDetails>(`${SEC}/sessions/${encodeURIComponent(sessionId)}${uidQs(uid)}`),
   /**
    * The body is always sent: the server reads `userId` off it without a null check.
    * The current session cannot be revoked here (400 cannot_revoke_current_session).
    */
   revokeSession: (sessionId: string, reason?: string, userId?: string) =>
-    blocksFetch<Record<string, unknown>>(`${SEC}/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+    blocksFetch<RevokeResult>(`${SEC}/sessions/${encodeURIComponent(sessionId)}/revoke`, {
       method: 'POST',
       body: { ...(reason ? { reason } : {}), ...(userId ? { userId } : {}) },
     }),

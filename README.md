@@ -169,7 +169,7 @@ src/
 | `/organizations`, `/one-click-signup` | IAM | Orgs, switch-org, signup-link configurations |
 | `/security` | IAM | Change password (live policy check), TOTP, MFA method, sessions, activity, sign out everywhere |
 | `/iam-settings` | IAM | Sign-up policy, org config (auto-join), MFA policy, client credentials, IdPs, OIDC clients |
-| `/profile` | IAM + Data | Profile, salutation, language, photo (uploaded to DMS) |
+| `/profile` | IAM + Data | Profile, salutation, language, photo (uploaded to DMS); Security (MFA, password), Sessions (devices, sign out) and History (account activity) tabs, as in blocks-iam |
 | `/data` | Data | Schema browser → generic CRUD for any schema, bulk ops, GraphQL console, validations, regex, mock data |
 | `/storage` | Data | File manager: folders, uploads, versions, rename/move/copy, trash, sharing, access policies |
 | `/localization` | Localization | Languages/modules (public + tenant), dictionary browser, key lookup, missing keys |

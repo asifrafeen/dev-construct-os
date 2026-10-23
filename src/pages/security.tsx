@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, LogOut, MonitorSmartphone, QrCode, ShieldCheck } from 'lucide-react';
+import { LogOut, MonitorSmartphone, QrCode, ShieldCheck } from 'lucide-react';
 import { useMe, ME_KEY } from '@/features/users/hooks';
 import { MfaCard } from '@/features/auth/mfa-card';
 import { MFA_TYPE, mfaErrorMessage } from '@/features/auth/mfa';
-import { accountErrorMessage } from '@/features/auth/errors';
-import { security, SESSION_STATUS, type SessionRow } from '@/features/security/api';
+import { ChangePasswordCard } from '@/features/security/change-password-card';
+import { security, sessionStatusLabel, type SessionRow } from '@/features/security/api';
 import { useAuthStore } from '@/state/auth-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
-import { Modal, Field } from '@/components/ui/modal';
+import { Modal } from '@/components/ui/modal';
 import { Checkbox } from '@/components/ui/form';
 import { DetailList, JsonView, PageHeader, Pager } from '@/components/ui/layout';
 import { formatDate } from '@/lib/utils';
@@ -49,89 +49,6 @@ export function SecurityPage() {
       </div>
       <ActivityCard />
     </div>
-  );
-}
-
-function ChangePasswordCard() {
-  const [oldPassword, setOld] = useState('');
-  const [newPassword, setNew] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [policyOk, setPolicyOk] = useState<boolean | null>(null);
-  const change = useMutation({
-    mutationFn: async () => {
-      const res = await security.changePassword(oldPassword, newPassword);
-      const err = accountErrorMessage(res);
-      if (err) throw new Error(err);
-      return res;
-    },
-    onSuccess: () => {
-      setOld('');
-      setNew('');
-      setConfirm('');
-    },
-  });
-
-  // Live policy feedback, debounced so each keystroke isn't a request.
-  useEffect(() => {
-    if (!newPassword) {
-      setPolicyOk(null);
-      return;
-    }
-    const t = setTimeout(() => {
-      security
-        .passwordCheck(newPassword)
-        .then((ok) => setPolicyOk(ok === true || (ok as unknown) === 'true'))
-        .catch(() => setPolicyOk(null));
-    }, 400);
-    return () => clearTimeout(t);
-  }, [newPassword]);
-
-  const mismatch = !!confirm && confirm !== newPassword;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="h-4 w-4" /> Change password
-        </CardTitle>
-        <CardDescription>
-          A wrong current password counts toward lockout. If the project logs out on password change, this session ends too.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            change.mutate();
-          }}
-        >
-          <Field label="Current password">
-            <Input type="password" autoComplete="current-password" value={oldPassword} onChange={(e) => setOld(e.target.value)} />
-          </Field>
-          <Field
-            label="New password"
-            hint={
-              policyOk === null ? 'Checked live against the project policy.' : policyOk ? (
-                <span className="text-emerald-600">Meets the password policy.</span>
-              ) : (
-                <span className="text-destructive">Does not meet the password policy.</span>
-              )
-            }
-          >
-            <Input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNew(e.target.value)} />
-          </Field>
-          <Field label="Confirm new password" hint={mismatch ? <span className="text-destructive">Doesn't match.</span> : undefined}>
-            <Input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-          </Field>
-          <Button disabled={!oldPassword || !newPassword || mismatch || policyOk === false || change.isPending}>
-            {change.isPending ? 'Changing…' : 'Change password'}
-          </Button>
-          {change.isSuccess && <p className="text-sm text-emerald-600">Password changed.</p>}
-          {change.isError && <ErrorNote error={change.error} />}
-        </form>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -269,10 +186,10 @@ function SessionsCard() {
                     {s.isCurrent && <Badge className="ml-2">this session</Badge>}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {s.primaryIpAddress ?? '—'} · active {formatDate(s.lastActivityAt)} · {SESSION_STATUS[s.status ?? 0]}
+                    {s.primaryIpAddress ?? '—'} · active {formatDate(s.lastActivityAt)} · {sessionStatusLabel(s.status)}
                   </p>
                 </button>
-                {!s.isCurrent && s.status === 0 && (
+                {!s.isCurrent && sessionStatusLabel(s.status) === 'Active' && (
                   <Button variant="outline" size="sm" disabled={revoke.isPending} onClick={() => revoke.mutate(s.sessionId)}>
                     Revoke
                   </Button>
