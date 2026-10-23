@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type FormEvent } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -34,6 +34,7 @@ import { mfaErrorCode, mfaErrorMessage, resendMfaCode } from '@/features/auth/mf
 import { useResendCooldown } from '@/features/auth/use-resend-cooldown';
 import { ProviderButton } from '@/features/auth/provider-button';
 import { startLogin } from '@/features/auth/sso';
+import type { LoginRedirectState } from '@/features/auth/require-auth';
 import { ME_KEY, useIsLoggedIn } from '@/features/users/hooks';
 import { UnauthorizedError } from '@/lib/blocks-client';
 import { BLOCKS, configIssues } from '@/lib/env';
@@ -94,6 +95,8 @@ export function LoginPage() {
   const { isLoggedIn, isChecking } = useIsLoggedIn();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  // Set when the app sent the user here because IAM would not renew their session.
+  const sessionEnded = !!(useLocation().state as LoginRedirectState | null)?.sessionEnded;
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -473,6 +476,13 @@ export function LoginPage() {
                 <h2 className="text-2xl font-semibold tracking-tight">Welcome back Chief</h2>
                 <p className="text-sm text-muted-foreground">Sign in to your Construct OS account.</p>
               </div>
+
+              {sessionEnded && (
+                <p className="mt-6 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Your session has ended. Sign in again to continue.
+                </p>
+              )}
 
               {blocked && (
                 <div className="mt-6 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">

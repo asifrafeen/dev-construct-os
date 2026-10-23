@@ -121,6 +121,13 @@ A session started by the in-app forms has no OIDC client, which `oidc/token` ref
 `invalid_client`, so that refusal falls back to `POST /iam/v4/auth/refresh` — see
 `src/state/auth-store.ts`.
 
+When IAM refuses the refresh token itself (`400 invalid_grant` from `oidc/token`,
+`invalid_refresh_token` from `auth/refresh`) the session is over: whichever request asked
+for the renewal, the app drops the signed-in user and lands on `/login` with a "session has
+ended" notice — it does not wait for the access token to run out too. A network error or a
+5xx does not count; the next attempt may succeed. Renewals are serialised across tabs with
+a Web Lock, so two tabs never present the same refresh token at once.
+
 ## Layout
 
 ```

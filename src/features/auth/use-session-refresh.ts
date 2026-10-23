@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuthStore, FALLBACK_LIFETIME_MS, REFRESH_MARGIN_MS } from '@/state/auth-store';
+import { useAuthStore, FALLBACK_LIFETIME_MS, REFRESH_MARGIN_MS, SessionEndedError } from '@/state/auth-store';
 import { ME_KEY, useIsLoggedIn } from '@/features/users/hooks';
 
 /**
@@ -35,9 +35,11 @@ export function useSessionRefresh() {
     async function refreshNow() {
       try {
         await refreshSession();
-      } catch {
-        // The session is genuinely gone. Re-reading /iam/me flips the guard to
-        // signed-out and routes to /login — no need to duplicate that here.
+      } catch (error) {
+        // A refused refresh token already signed the user out (RequireAuth listens for it).
+        // Re-reading /iam/me now could answer 200 on the unexpired access token and undo that.
+        if (error instanceof SessionEndedError) return;
+        // Offline or IAM down proves nothing about the session; /iam/me settles it.
         await qc.invalidateQueries({ queryKey: ME_KEY });
       }
     }

@@ -92,6 +92,44 @@ function refusedForClient(status: number, body: unknown): boolean {
   return error === 'invalid_client' || error === 'invalid_request';
 }
 
+/**
+ * IAM refused the refresh token itself: expired, revoked (e.g. "Sign out" on this device
+ * from another session), or a user who may no longer sign in. Nothing can renew it, so the
+ * session is over and the visitor has to sign in again.
+ *
+ *   oidc/token     400 invalid_grant            "Refresh token is invalid or expired"
+ *   auth/refresh   400 invalid_refresh_token    (also clears the session cookies)
+ *
+ * Refusals over the client never get this far — renew() retries those on auth/refresh, and
+ * only that answer counts. A network failure or a 5xx is not this either: it says nothing
+ * about the token, and the next attempt may well succeed.
+ */
+export class SessionEndedError extends Error {
+  constructor(
+    public status: number,
+    public body: unknown,
+  ) {
+    super(`session ended: refresh refused with ${status}`);
+    this.name = 'SessionEndedError';
+  }
+}
+
+const refusedToken = (status: number) => status === 400 || status === 401 || status === 403;
+
+type SessionEndedListener = () => void;
+const sessionEndedListeners = new Set<SessionEndedListener>();
+
+/**
+ * Called once per refused renewal, however many requests were waiting on it. Returns the
+ * unsubscribe function, so it drops straight into a useEffect.
+ */
+export function onSessionEnded(listener: SessionEndedListener): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
 async function post(endpoint: Endpoint): Promise<{ res: Response; payload: RefreshResponse | null }> {
   const { url, headers, body } = refreshRequest(endpoint);
 
@@ -111,7 +149,10 @@ interface AuthState {
   lastRefreshedAt: number | null;
   /** Epoch ms the current access token is expected to die, when IAM tells us. */
   expiresAt: number | null;
-  /** Renew the session (rotates the cookies). Concurrent callers share one request. */
+  /**
+   * Renew the session (rotates the cookies). Concurrent callers share one request. Rejects
+   * with SessionEndedError when IAM refuses the refresh token, after telling onSessionEnded.
+   */
   refreshSession: () => Promise<void>;
   /** True when the token is close enough to expiry to be worth renewing early. */
   needsRefresh: () => boolean;
@@ -129,8 +170,22 @@ async function renew(): Promise<RefreshResponse> {
     if (res.ok) preferred = 'auth-refresh';
   }
 
-  if (!res.ok) throw new Error(`session refresh failed: ${res.status}`);
+  if (!res.ok) {
+    if (refusedToken(res.status)) throw new SessionEndedError(res.status, payload);
+    throw new Error(`session refresh failed: ${res.status}`);
+  }
   return payload ?? {};
+}
+
+/**
+ * Renewals are serialised across tabs as well. Every tab shares one cookie jar, so two tabs
+ * renewing in the same instant present the same refresh token; the one that loses can be
+ * told invalid_grant and would sign itself out of a session the other tab just renewed.
+ * Behind a Web Lock the second tab waits, then renews with the rotated cookie.
+ */
+async function renewAcrossTabs(): Promise<RefreshResponse> {
+  if (!navigator.locks) return renew();
+  return navigator.locks.request('blocks-session-renewal', renew);
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -140,13 +195,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshSession: async () => {
     // No client-side pre-check: the cookies are HttpOnly, so asking IAM is the only way to
     // learn whether a 401 is renewable. A visitor who never signed in costs a refused call.
-    inFlight ??= renew()
+    inFlight ??= renewAcrossTabs()
       .then((result) => {
         set({
           lastRefreshedAt: Date.now(),
           expiresAt: result.expires_in ? Date.now() + result.expires_in * 1000 : null,
         });
         return result;
+      })
+      .catch((error: unknown) => {
+        if (error instanceof SessionEndedError) {
+          get().clear();
+          sessionEndedListeners.forEach((listener) => listener());
+        }
+        throw error;
       })
       .finally(() => {
         inFlight = null;
