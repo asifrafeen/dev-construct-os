@@ -83,9 +83,11 @@ export async function startEmailMfaEnrolment(): Promise<string> {
  * its five minutes — but the freshly mailed one is bound to the id we threw away, and
  * verifying it against ours reads the older code and answers invalid_two_factor_code.
  *
- * Used by both MFA screens. Note that IAM guards this with `[Authorize]`: on the login
- * step, where the session cookie does not exist until a code is accepted, it answers
- * 401 with `www-authenticate: Bearer`. The caller needs an answer ready for that.
+ * Used by both MFA screens. Older IAM builds guard this with `[Authorize]`: on the login
+ * step, where the session cookie does not exist until a code is accepted, they answer
+ * 401 with `www-authenticate: Bearer`. Current IAM source makes it `[AllowAnonymous]`
+ * and adds a throttle (429 `resend_too_soon`) instead — the caller handles both until
+ * every environment runs the newer build.
  */
 export async function resendMfaCode(mfaId: string): Promise<void> {
   await blocksFetch<{ mfaId?: string }>(`${MFA}/resend`, {
@@ -134,6 +136,8 @@ const MFA_ERROR_HELP: Record<string, string> = {
     'Two-step verification is switched off for this project. An administrator has to enable it first.',
   empty_user_id: 'IAM could not tell which account this is. Sign in again and retry.',
   invalid_user_id: 'You can only change two-step verification on your own account.',
+  resend_too_soon: 'A code was sent moments ago. Wait a little before asking for another.',
+  invalid_totp_code: 'That authenticator code is not correct — check the time on your device and try again.',
   email_not_verified:
     'Your email address is not verified yet, so it cannot be used for verification codes.',
   phonenumber_not_exist: 'That account has no phone number on file.',

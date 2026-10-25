@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { BLOCKS, IAM_BASE } from '@/lib/env';
+import { trackedFetch } from '@/lib/tracked-fetch';
 
 /**
  * Session renewal for the cookie-backed model.
@@ -13,9 +14,8 @@ import { BLOCKS, IAM_BASE } from '@/lib/env';
  * two renewals racing on the same cookie can look like token theft and invalidate the
  * whole session. Every caller shares one in-flight request.
  *
- * Endpoint: see REFRESH_ENDPOINT below. Either variant sends no token in the body —
- * the refresh token is an HttpOnly cookie, so IAM reads it off the request and JS has
- * nothing to hand over.
+ * Neither endpoint is sent a token: the refresh token is an HttpOnly cookie, so IAM reads
+ * it off the request and JS has nothing to hand over.
  */
 
 /** Renewed a minute before expiry, so a request never rides an almost-dead token. */
@@ -23,78 +23,40 @@ const REFRESH_MARGIN_MS = 60_000;
 /** Used when IAM does not report `expires_in`. Access tokens are short (~5 min). */
 const FALLBACK_LIFETIME_MS = 5 * 60_000;
 
-/**
- * "This browser plausibly has a session."
- *
- * The session cookies are HttpOnly, so JS cannot ask whether one exists. Without a hint,
- * every anonymous page load would answer a 401 by firing a pointless renewal call, and
- * a dead session would re-attempt renewal on each subsequent call. This flag is that hint —
- * it holds no secret and grants nothing; the cookies remain the only real credential.
- *
- * It lives in localStorage so it survives a reload, which is precisely the case the 401
- * retry has to cover: the tab returns with a long-dead access token and a live refresh one.
- */
-const SESSION_MARKER = 'blocks.session';
-
-const storage = {
-  get: () => {
-    try {
-      return localStorage.getItem(SESSION_MARKER) === '1';
-    } catch {
-      return false; // private mode / storage disabled
-    }
-  },
-  set: (on: boolean) => {
-    try {
-      if (on) localStorage.setItem(SESSION_MARKER, '1');
-      else localStorage.removeItem(SESSION_MARKER);
-    } catch {
-      /* nothing to do — refresh still works, just without the shortcut */
-    }
-  },
-};
-
-/** Call after any successful sign-in, so 401s become renewable from here on. */
-export const markSignedIn = () => storage.set(true);
-/** Call on sign-out, or when renewal is definitively refused. */
-export const clearSignedIn = () => storage.set(false);
-/** Whether a renewal attempt is worth making at all. */
-export const maybeSignedIn = () => storage.get();
-
 interface RefreshResponse {
   expires_in?: number;
   access_token?: string;
 }
 
 /**
- * TEMPORARY: renewal goes through the OIDC token endpoint instead of `auth/refresh`.
+ * Renewal goes to the OIDC token endpoint, with `auth/refresh` behind it:
  *
- * `auth/refresh` is the intended endpoint and the one the rest of this file is written
- * around; it is bypassed here only until it behaves on the current deployment. The two
- * differ in wire format, not in meaning:
- *
- *   auth/refresh      POST {IAM_BASE}/auth/refresh   JSON `{}`
- *   oidc/token        POST {IAM_BASE}/oidc/token     form `grant_type=refresh_token`
+ *   oidc/token     POST {IAM_BASE}/oidc/token     form `grant_type=refresh_token&client_id=…`
+ *   auth/refresh   POST {IAM_BASE}/auth/refresh   JSON `{}`
  *
  * e.g. https://blocksapi.selisesme.com/iam/v4/oidc/token — the host comes from
  * VITE_BLOCKS_API_URL, so each environment renews against its own API.
  *
- * Flip this to 'auth-refresh' to put it back — nothing else has to change.
+ * oidc/token is the only one that can renew an impersonated session, but it renews only a
+ * session that belongs to an OIDC client — one started through the hosted login. The in-app
+ * forms (password, MFA, social) start a session with no client, which oidc/token refuses
+ * as 401 `invalid_client` however fresh the cookie is. auth/refresh takes either kind.
  */
-const REFRESH_ENDPOINT: 'oidc-token' | 'auth-refresh' = 'oidc-token';
+type Endpoint = 'oidc-token' | 'auth-refresh';
+
+/** `client_id` is mandatory on oidc/token — without one configured there is no point asking. */
+const FIRST_CHOICE: Endpoint = BLOCKS.oidcClientId ? 'oidc-token' : 'auth-refresh';
 
 /**
- * The request the chosen endpoint expects.
- *
- * Neither body carries a token: the refresh cookie is HttpOnly and travels on the
- * request itself. `client_id` goes out only when the project configured one — the OIDC
- * token endpoint accepts the cookie-backed grant without it, and an empty value reads
- * as a claim about a client that does not exist.
+ * Where renewal goes first. Moves to auth/refresh once that has renewed a session oidc/token
+ * refused: a session keeps its client (or its lack of one) for life, so asking oidc/token
+ * again would only repeat the refusal. Reset on sign-out, since the next session may differ.
  */
-function refreshRequest(): { url: string; headers: Record<string, string>; body: string } {
-  if (REFRESH_ENDPOINT === 'oidc-token') {
-    const form = new URLSearchParams({ grant_type: 'refresh_token' });
-    if (BLOCKS.oidcClientId) form.set('client_id', BLOCKS.oidcClientId);
+let preferred: Endpoint = FIRST_CHOICE;
+
+function refreshRequest(endpoint: Endpoint): { url: string; headers: Record<string, string>; body: string } {
+  if (endpoint === 'oidc-token') {
+    const form = new URLSearchParams({ grant_type: 'refresh_token', client_id: BLOCKS.oidcClientId });
 
     return {
       url: `${IAM_BASE}/oidc/token`,
@@ -112,20 +74,74 @@ function refreshRequest(): { url: string; headers: Record<string, string>; body:
 }
 
 /**
- * Whether a refused renewal is final — the cookie is gone, spent, or rejected — as
- * opposed to a transient network or server fault worth another try later.
+ * Whether oidc/token turned the request away over the client rather than the token — the
+ * case auth/refresh may still renew. IAM answers all of these before it touches the
+ * refresh token, so the cookie is unspent and safe to present a second time:
  *
- * The two endpoints say it differently, which is the whole reason this is a function:
- * `auth/refresh` answers 401/403, while the OIDC token endpoint follows OAuth and
- * answers **400 `invalid_grant`**. Reading a 400 as transient would leave the marker on
- * and re-attempt renewal on every later 401 for a session that is definitively over.
+ *   401 invalid_client    the session has no OIDC client (started by an in-app form)
+ *   400 invalid_client    VITE_BLOCKS_OIDC_CLIENT_ID is not a client of this project
+ *   400 invalid_request   the client does not read the refresh cookie
+ *
+ * `invalid_grant` is not here: that is the token itself being dead, and auth/refresh would
+ * only say so again.
  */
-function renewalRefused(status: number, body: unknown): boolean {
-  if (status === 401 || status === 403) return true;
-  if (status !== 400) return false;
+function refusedForClient(status: number, body: unknown): boolean {
+  if (status !== 400 && status !== 401) return false;
 
   const error = (body as { error?: unknown } | null)?.error;
-  return error === 'invalid_grant' || error === 'invalid_request';
+  return error === 'invalid_client' || error === 'invalid_request';
+}
+
+/**
+ * IAM refused the refresh token itself: expired, revoked (e.g. "Sign out" on this device
+ * from another session), or a user who may no longer sign in. Nothing can renew it, so the
+ * session is over and the visitor has to sign in again.
+ *
+ *   oidc/token     400 invalid_grant            "Refresh token is invalid or expired"
+ *   auth/refresh   400 invalid_refresh_token    (also clears the session cookies)
+ *
+ * Refusals over the client never get this far — renew() retries those on auth/refresh, and
+ * only that answer counts. A network failure or a 5xx is not this either: it says nothing
+ * about the token, and the next attempt may well succeed.
+ */
+export class SessionEndedError extends Error {
+  constructor(
+    public status: number,
+    public body: unknown,
+  ) {
+    super(`session ended: refresh refused with ${status}`);
+    this.name = 'SessionEndedError';
+  }
+}
+
+const refusedToken = (status: number) => status === 400 || status === 401 || status === 403;
+
+type SessionEndedListener = () => void;
+const sessionEndedListeners = new Set<SessionEndedListener>();
+
+/**
+ * Called once per refused renewal, however many requests were waiting on it. Returns the
+ * unsubscribe function, so it drops straight into a useEffect.
+ */
+export function onSessionEnded(listener: SessionEndedListener): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
+async function post(endpoint: Endpoint): Promise<{ res: Response; payload: RefreshResponse | null }> {
+  const { url, headers, body } = refreshRequest(endpoint);
+
+  const res = await trackedFetch(url, {
+    method: 'POST',
+    credentials: 'include', // sends the refresh cookie, and applies the rotated one
+    headers: { 'x-blocks-key': BLOCKS.projectKey, ...headers },
+    body,
+  });
+
+  const payload = (await res.json().catch(() => null)) as RefreshResponse | null;
+  return { res, payload };
 }
 
 interface AuthState {
@@ -133,7 +149,10 @@ interface AuthState {
   lastRefreshedAt: number | null;
   /** Epoch ms the current access token is expected to die, when IAM tells us. */
   expiresAt: number | null;
-  /** Renew the session (rotates the cookies). Concurrent callers share one request. */
+  /**
+   * Renew the session (rotates the cookies). Concurrent callers share one request. Rejects
+   * with SessionEndedError when IAM refuses the refresh token, after telling onSessionEnded.
+   */
   refreshSession: () => Promise<void>;
   /** True when the token is close enough to expiry to be worth renewing early. */
   needsRefresh: () => boolean;
@@ -144,27 +163,29 @@ interface AuthState {
 let inFlight: Promise<RefreshResponse> | null = null;
 
 async function renew(): Promise<RefreshResponse> {
-  const { url, headers, body } = refreshRequest();
+  let { res, payload } = await post(preferred);
 
-  const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include', // sends the refresh cookie, and applies the rotated one
-    headers: { 'x-blocks-key': BLOCKS.projectKey, ...headers },
-    body,
-  });
-
-  const payload = (await res.json().catch(() => null)) as RefreshResponse | null;
-
-  if (!res.ok) {
-    // A refused renewal means the session is over and no later call should keep asking.
-    // Anything else (network, 5xx) may be transient, so leave the marker alone and let
-    // the next 401 try again.
-    if (renewalRefused(res.status, payload)) clearSignedIn();
-    throw new Error(`session refresh failed: ${res.status}`);
+  if (!res.ok && preferred === 'oidc-token' && refusedForClient(res.status, payload)) {
+    ({ res, payload } = await post('auth-refresh'));
+    if (res.ok) preferred = 'auth-refresh';
   }
 
-  markSignedIn();
+  if (!res.ok) {
+    if (refusedToken(res.status)) throw new SessionEndedError(res.status, payload);
+    throw new Error(`session refresh failed: ${res.status}`);
+  }
   return payload ?? {};
+}
+
+/**
+ * Renewals are serialised across tabs as well. Every tab shares one cookie jar, so two tabs
+ * renewing in the same instant present the same refresh token; the one that loses can be
+ * told invalid_grant and would sign itself out of a session the other tab just renewed.
+ * Behind a Web Lock the second tab waits, then renews with the rotated cookie.
+ */
+async function renewAcrossTabs(): Promise<RefreshResponse> {
+  if (!navigator.locks) return renew();
+  return navigator.locks.request('blocks-session-renewal', renew);
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -172,18 +193,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   expiresAt: null,
 
   refreshSession: async () => {
-    // Nothing to renew: never signed in, signed out, or renewal already refused. Failing
-    // here (rather than calling) is what turns a 401 into "logged out" for anonymous
-    // visitors without a wasted round-trip.
-    if (!maybeSignedIn()) throw new Error('no session to refresh');
-
-    inFlight ??= renew()
+    // No client-side pre-check: the cookies are HttpOnly, so asking IAM is the only way to
+    // learn whether a 401 is renewable. A visitor who never signed in costs a refused call.
+    inFlight ??= renewAcrossTabs()
       .then((result) => {
         set({
           lastRefreshedAt: Date.now(),
           expiresAt: result.expires_in ? Date.now() + result.expires_in * 1000 : null,
         });
         return result;
+      })
+      .catch((error: unknown) => {
+        if (error instanceof SessionEndedError) {
+          get().clear();
+          sessionEndedListeners.forEach((listener) => listener());
+        }
+        throw error;
       })
       .finally(() => {
         inFlight = null;
@@ -201,7 +226,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   clear: () => {
-    clearSignedIn();
+    preferred = FIRST_CHOICE;
     set({ lastRefreshedAt: null, expiresAt: null });
   },
 }));

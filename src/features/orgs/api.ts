@@ -80,12 +80,13 @@ export interface OrgConfig {
 }
 
 /**
- * `CreatedFrom` is declared as an unnamed enum [1, 2, 3] — the Swagger publishes no
- * member names, so this value is not derivable from the spec. 3 is Construct, per the
- * platform team.
+ * `CreatedFrom` is an unnamed enum in the Swagger: 1 Cloud, 2 ConstructSignup,
+ * 3 ConstructPortal (per IamController's own docs). 3 is the one a signed-in app sends.
  *
- * The server pairs it with the matching `allowOrgCreationFrom*` flag in the org config,
- * so a wrong value gets checked against the wrong gate. Don't "fix" it by guessing.
+ * Each value is checked against its own org-config flag, and 3's is
+ * `allowOrgCreationFromPortal` — NOT `allowOrgCreationFromConstruct`, despite the name.
+ * The caller is added to the new organization as its first member. 2 is reserved for the
+ * signup/SSO provisioning flows; clients should not send it.
  */
 export const CREATED_FROM_CONSTRUCT = 3;
 

@@ -33,12 +33,6 @@ export const useUsers = (filter: Record<string, unknown> = {}, page = 0, pageSiz
     queryFn: () => users.list({ filter, page, pageSize }),
   });
 
-export const useUserTimeline = (userId: string | undefined) =>
-  useQuery({
-    queryKey: ['iam', 'timeline', userId],
-    queryFn: () => users.timeline(userId!),
-    enabled: !!userId,
-  });
 
 /**
  * Grants roles (and optionally permissions) in the organization the UI is currently

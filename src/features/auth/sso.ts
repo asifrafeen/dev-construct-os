@@ -1,5 +1,5 @@
 import { BLOCKS, IAM_BASE, withoutPort } from '@/lib/env';
-import { markSignedIn } from '@/state/auth-store';
+import { trackedFetch } from '@/lib/tracked-fetch';
 import { describeAuthError } from './errors';
 
 /**
@@ -29,7 +29,7 @@ export async function startLogin(): Promise<never> {
 
   // x-blocks-key must be sent in BOTH the query string and the header — omitting
   // either makes initiate fail.
-  const res = await fetch(url, { headers: { 'x-blocks-key': BLOCKS.projectKey } });
+  const res = await trackedFetch(url, { headers: { 'x-blocks-key': BLOCKS.projectKey } });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     throw new Error(`initiate failed (${res.status}): ${detail || 'no response body'}`);
@@ -43,8 +43,14 @@ export async function startLogin(): Promise<never> {
   return new Promise<never>(() => {}); // navigation in flight; never resolves
 }
 
-/** Step 4: run on the callback route. This is what sets the session cookie. */
-export async function finishLogin(search: string): Promise<void> {
+/**
+ * Step 4: run on the callback route. This is what sets the session cookie.
+ *
+ * Returns the in-app path IAM asked us to land on, or null. `/oidc/authorize` puts
+ * `forwardedTo` on the redirect alongside the code — for a signup link it is the path the
+ * configuration froze, and for an ordinary login whatever `/idp/initiate` was given.
+ */
+export async function finishLogin(search: string): Promise<string | null> {
   const params = new URLSearchParams(search);
   const code = params.get('code');
   const state = params.get('state');
@@ -58,7 +64,7 @@ export async function finishLogin(search: string): Promise<void> {
     throw new Error('The sign-in response was missing its code and state. Start again from the sign-in page.');
   }
 
-  const res = await fetch(
+  const res = await trackedFetch(
     `${IAM_BASE}/idp/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
     { credentials: 'include', headers: { 'x-blocks-key': BLOCKS.projectKey } },
   );
@@ -67,6 +73,8 @@ export async function finishLogin(search: string): Promise<void> {
     throw new Error(describeAuthError(res.status, detail));
   }
 
-  // The session cookie now exists, so a later 401 is renewable — see state/auth-store.
-  markSignedIn();
+  // Server-supplied, but it arrives through a URL: anything not a relative in-app path is
+  // dropped rather than handed to a navigation.
+  const forwardedTo = params.get('forwardedTo');
+  return forwardedTo?.startsWith('/') && !forwardedTo.startsWith('//') ? forwardedTo : null;
 }

@@ -15,7 +15,12 @@ export interface CrudNames {
   update: string;
   remove: string;
   filterType: string;
-  sortType: string;
+  /**
+   * @deprecated Ignored. Every schema sorts with the shared `DynamicSortInput`
+   * (`{ field, direction }`) — there is no per-schema sort type, and naming one fails
+   * validation. Kept optional so existing call sites still compile.
+   */
+  sortType?: string;
   insertType: string;
   updateType: string;
 }
@@ -37,7 +42,7 @@ export function makeCrud<TRecord, TInsert, TUpdate>(n: CrudNames, fieldSelection
       queryKey: [...listKey, vars],
       queryFn: () =>
         gql<Record<string, GqlResult<TRecord>>>(
-          `query($where:${n.filterType},$paging:PaginationInput,$order:[${n.sortType}!]){
+          `query($where:${n.filterType},$paging:PaginationInput,$order:[DynamicSortInput!]){
              ${n.query}(where:$where,paging:$paging,order:$order){
                totalCount pageNo pageSize totalPages hasNextPage hasPreviousPage
                items { ${fieldSelection} }

@@ -33,7 +33,6 @@ export const productsCrud = makeCrud<Product, ProductInsert, ProductUpdate>(
     update: 'updateProduct',
     remove: 'deleteProduct',
     filterType: 'ProductFilterInput',
-    sortType: 'ProductSortInput',
     insertType: 'ProductInsertInput',
     updateType: 'ProductUpdateInput',
   },
@@ -52,10 +51,44 @@ const remove = productsCrud.useDelete();
 remove.mutate({ ItemId: { eq: someId } });
 ```
 
+## Generated operations
+
+For an Entity schema `X` (case-sensitive, exactly as named):
+
+```graphql
+getXs(where: XFilterInput, order: [DynamicSortInput!], paging: PaginationInput): XResult
+insertX(input: XInsertInput): ActionResponse
+insertManyX(input: [XInsertInput]): BulkActionResponse      # { acknowledged totalImpactedData message itemIds }
+updateX(where: XFilterInput, input: XUpdateInput)            # FIRST match only
+updateManyX(where: XFilterInput, input: XUpdateInput)        # every match
+deleteX(where: XFilterInput, input: { isHardDelete: Boolean! })      # FIRST match only
+deleteManyX(where: XFilterInput, input: { isHardDelete: Boolean! })
+```
+
+- The list query is **`get` + name + `s`** — naive, so `Company` → `getCompanys`. Read it
+  off the schema's `querySchema` rather than pluralizing.
+- Sorting uses the shared `DynamicSortInput` (`{ field: "Price", direction: DESC }`), not a
+  per-schema sort type.
+- `paging` is 1-based; omit either half and you get the first 10.
+- The legacy `input: DynamicQueryInput` (`filter`/`sort` as JSON strings) still works, but
+  `where`/`order`/`paging` win when both are sent.
+- There are no aggregate, group-by, join or subscription operations — `totalCount` is the
+  only count.
+- Soft and hard delete both remove the row from `getXs`; soft keeps a copy in a
+  deleted-records store.
+
 ## Filters
 
-`where` is the generated `<Schema>FilterInput`. Per-field operators: `eq`, `neq`, `gt`,
-`gte`, `lt`, `lte`, `contains`, `in`, plus `and` / `or`. Omit it to fetch everything.
+`where` is the generated `<Schema>FilterInput`. Per-field operators: strings `eq`, `neq`,
+`contains`, `startsWith`, `endsWith`, `in`; numbers and dates `eq`, `neq`, `gt`, `gte`, `lt`,
+`lte`, `in`; booleans `eq`, `neq`; enums `eq`, `neq`, `in`, `nin`; plus `and` / `or`. Omit it to
+fetch everything.
+
+## Access levels
+
+Each schema sets read/write/edit/delete access: `Public` needs only `x-blocks-key`, `User`
+needs a signed-in user, `Custom` applies row/column policies (and denies when the schema has
+none). The generic screen on the Data page shows these per schema.
 
 ## Attaching files
 
