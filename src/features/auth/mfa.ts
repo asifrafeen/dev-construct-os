@@ -32,8 +32,8 @@ export const MFA_TYPE = {
 
 export type MfaTypeValue = (typeof MFA_TYPE)[keyof typeof MFA_TYPE];
 
-/** Emailed codes are 5 digits (11111–99999) and live for 5 minutes. */
-export const EMAIL_CODE_LENGTH = 5;
+/** Emailed codes are 6 digits and live for 5 minutes. */
+export const EMAIL_CODE_LENGTH = 6;
 export const EMAIL_CODE_TTL_MINUTES = 5;
 
 /**
