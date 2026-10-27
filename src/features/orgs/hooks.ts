@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { users } from '@/features/users/api';
 import { orgs, type CreateOrgInput, type ListOrgsParams, type SaveOrgInput } from './api';
 
 interface ActiveOrgState {
@@ -79,27 +80,79 @@ export function useUpdateOrg() {
 }
 
 /**
+ * IAM answered 200 to `/auth/switch-org`, but the session is not in the organization
+ * that was asked for. `actual` is where `/iam/me` says it is, or null when `/iam/me`
+ * reported no organization at all.
+ */
+export class OrgSwitchNotAppliedError extends Error {
+  constructor(
+    public requested: string,
+    public actual: string | null,
+    names: Map<string, string>,
+  ) {
+    const label = (id: string) => (names.has(id) ? `"${names.get(id)}"` : `"${id}"`);
+    super(
+      actual === null
+        ? `The switch to ${label(requested)} could not be confirmed: IAM reports no organization for this session.`
+        : `IAM did not switch to ${label(requested)}. The session is still in ${label(actual)}.` +
+            (requested === 'default'
+              ? ' A multi-organization project does not let a session switch into "default".'
+              : ''),
+    );
+    this.name = 'OrgSwitchNotAppliedError';
+  }
+}
+
+/**
  * Switch organization for real: the session moves, not just this tab's preference.
  *
- * The local marker is written only after IAM accepts, so a refused switch leaves the
- * UI showing the organization the session is actually in.
+ * A 200 from `/auth/switch-org` is not proof of a switch. IAM can accept the request
+ * and still mint the token for another organization: on a multi-org project it drops
+ * "default" from the request and falls back to the last used organization, yet answers
+ * 200. So the switch is verified by reading `/iam/me`, whose `organizationId` is the
+ * new access token's own `org_id` claim.
+ *
+ * On a mismatch the session is switched once more into the organization it actually
+ * landed in. That is a repair, not a retry: IAM has already stored the *requested*
+ * organization as the user's last used one and on the new refresh token, so without it
+ * the next refresh would quietly move the session there behind the UI's back.
+ *
+ * The local marker always ends on the organization the session is really in (unchanged
+ * when that is unknown), so the header switcher never shows a switch that didn't happen.
  *
  * Then everything is invalidated, which is not laziness. `/iam/me` projects roles and
  * permissions *for the session's organization* — `MapToSingleAccountFields(user,
  * contextOrgId)` — so the signed-in user's own access changes shape across a switch,
  * and with it every permission-gated screen. Users, roles and permission lists are all
- * scoped the same way.
+ * scoped the same way. It runs on failure too: the tokens were reissued either way.
  */
 export function useSwitchOrg() {
   const qc = useQueryClient();
   const setActiveOrg = useActiveOrg((s) => s.setActiveOrg);
 
   return useMutation({
-    mutationFn: (organizationId: string) => orgs.switchOrg(organizationId),
-    onSuccess: async (_result, organizationId) => {
-      setActiveOrg(organizationId);
-      await qc.invalidateQueries();
+    mutationFn: async (organizationId: string) => {
+      await orgs.switchOrg(organizationId);
+
+      const { data } = await users.me();
+      const actual = data?.organizationId || null;
+      if (actual === organizationId) return actual;
+
+      if (actual !== null) {
+        setActiveOrg(actual);
+        try {
+          await orgs.switchOrg(actual);
+        } catch (error) {
+          console.warn('Could not re-pin the session to its actual organization', error);
+        }
+      }
+
+      const my = qc.getQueryData<Awaited<ReturnType<typeof orgs.my>>>(['iam', 'orgs', 'my']);
+      const names = new Map((my?.organizations ?? []).map((o) => [o.itemId, o.name ?? o.itemId]));
+      throw new OrgSwitchNotAppliedError(organizationId, actual, names);
     },
+    onSuccess: (actual) => setActiveOrg(actual),
+    onSettled: () => qc.invalidateQueries(),
   });
 }
 
