@@ -11,6 +11,51 @@ import { BLOCKS } from '@/lib/env';
  */
 
 export const NOTIFIER_BASE = `${BLOCKS.apiUrl}/logic/v4/Notifier`;
+/** The configurations themselves, read-only here; Blocks OS edits them. */
+export const NOTIFICATION_CONFIG_BASE = `${BLOCKS.apiUrl}/logic/v4/Notification`;
+
+/** Who receives a configuration's notifications. Enums arrive as numbers. */
+export interface NotificationAudience {
+  /** 0 affected users only (the ones a send names), 1 all users, 2 targeted rules. */
+  level?: number;
+  userIds?: string[];
+  roles?: string[];
+  permissions?: string[];
+  /** Targeted level: also the users a send names ("Owner" in Blocks OS). */
+  alsoNamedUsers?: boolean;
+}
+
+export interface NotificationConfig {
+  itemId: string;
+  name: string;
+  description?: string | null;
+  /** 0 consumer users, 1 OS users only, 2 both. */
+  scope?: number;
+  isBuiltIn?: boolean;
+  isDisabled?: boolean;
+  liveEnabled?: boolean;
+  pushEnabled?: boolean;
+  enablePersistence?: boolean;
+  audience?: NotificationAudience | null;
+  defaultAudience?: NotificationAudience | null;
+  /** Built-in personal notice: the default audience always applies. */
+  audienceLocked?: boolean;
+  /** The hub method the in-app channel invokes. */
+  notifyMethod?: string;
+  pushTemplate?: { titleKey?: string; bodyKey?: string; link?: string | null } | null;
+}
+
+export interface NotificationConfigs {
+  totalCount?: number;
+  configurations?: NotificationConfig[] | null;
+}
+
+/** A configuration only for OS users never reaches this app's users. */
+export const reachesConsumers = (c: NotificationConfig) => c.scope !== 1;
+
+/** The audience that applies, the way logic resolves it: own unless locked, else the default. */
+export const effectiveAudience = (c: NotificationConfig): NotificationAudience =>
+  (c.audienceLocked ? null : c.audience) ?? c.defaultAudience ?? { level: 0 };
 
 export interface SubscriptionFilter {
   context?: string;
@@ -28,7 +73,11 @@ export interface NotifyInput {
   denormalizedPayload?: string;
   /** Store `denormalizedPayload` parsed, so clients get an object rather than a string. */
   saveDenormalizedPayloadAsAnObject?: boolean;
-  configurationName?: string;
+  /**
+   * Required: the notification configuration (edited in Blocks OS) that decides who receives
+   * it and on which channels. Logic refuses a send without one.
+   */
+  configurationName: string;
   connectionId?: string;
   contentAvailable?: boolean;
   responseKey?: string;
@@ -107,8 +156,25 @@ export function describeNotification(n: InboxNotification): { title: string; bod
 }
 
 export const notifier = {
+  /**
+   * Logic's request model makes `connectionId`, `responseKey` and `responseValue` required
+   * strings — a send without them is a 400 naming all three — yet it never picks receivers by
+   * the connection. They get harmless defaults so a caller sets only what it means.
+   */
   notify: (input: NotifyInput) =>
-    blocksFetch<Record<string, unknown>>(`${NOTIFIER_BASE}/Notify`, { method: 'POST', body: input }),
+    blocksFetch<Record<string, unknown>>(`${NOTIFIER_BASE}/Notify`, {
+      method: 'POST',
+      body: {
+        ...input,
+        connectionId: input.connectionId || 'construct-os',
+        responseKey: input.responseKey || 'construct-os',
+        responseValue: input.responseValue || crypto.randomUUID(),
+      },
+    }),
+
+  /** Needs `blocks-os::notification::gets`; without it the request is a 403. */
+  configurations: () =>
+    blocksFetch<NotificationConfigs>(`${NOTIFICATION_CONFIG_BASE}/Gets?Page=0&PageSize=200`),
 
   inbox: (q: InboxQuery = {}) => {
     const qs = new URLSearchParams();

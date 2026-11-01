@@ -173,7 +173,7 @@ src/
 | `/data` | Data | Schema browser → generic CRUD for any schema, bulk ops, GraphQL console, validations, regex, mock data |
 | `/storage` | Data | File manager: folders, uploads, versions, rename/move/copy, trash, sharing, access policies |
 | `/localization` | Localization | Languages/modules (public + tenant), dictionary browser, key lookup, missing keys |
-| `/notifications` | Logic | Inbox, send to users/roles/orgs/filters, live hub events, web push on/off for this browser |
+| `/notifications` | Logic | Inbox, test send for any consumer-user configuration (picked from a dropdown) to users/roles/orgs/filters, live hub events, web push on/off for this browser |
 | `/mail` | Logic + OS | Templated send (+attachments), mailbox, templates, mail servers |
 | `/workflows` | Logic | Workflows, publish/versions, webhook trigger (live + draft), executions + logs, scheduler, functions, proxies |
 | `/agents` | Agents | Streaming chat, conversation history, voice session token |

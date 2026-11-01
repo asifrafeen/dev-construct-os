@@ -1,7 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { notifier, type InboxQuery, type NotifyInput } from './api';
+import { notifier, reachesConsumers, type InboxQuery, type NotifyInput } from './api';
 
 const INBOX_KEY = ['notifier', 'inbox'] as const;
+
+/** The configurations this app's users can be sent, by name — OS-only ones are left out. */
+export const useNotificationConfigs = () =>
+  useQuery({
+    queryKey: ['notifier', 'configurations'],
+    queryFn: () => notifier.configurations(),
+    select: (r) =>
+      (r.configurations ?? []).filter(reachesConsumers).sort((a, b) => a.name.localeCompare(b.name)),
+    retry: false,
+  });
 
 export const useInbox = (q: InboxQuery) =>
   useQuery({ queryKey: [...INBOX_KEY, q], queryFn: () => notifier.inbox(q) });

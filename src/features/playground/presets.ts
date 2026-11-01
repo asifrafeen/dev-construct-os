@@ -129,10 +129,23 @@ export const PRESETS: Record<string, Preset[]> = {
     { label: 'My notifications', method: 'GET', path: '/logic/v4/Notifier/GetNotifications?Page=0&PageSize=20' },
     { label: 'Mark all read', method: 'POST', path: '/logic/v4/Notifier/MarkAllNotificationAsRead' },
     {
+      label: 'Notification configurations',
+      method: 'GET',
+      path: '/logic/v4/Notification/Gets?Page=0&PageSize=200',
+    },
+    {
       label: 'Notify user',
       method: 'POST',
       path: '/logic/v4/Notifier/Notify',
-      body: { userIds: ['<user id>'], denormalizedPayload: '{"title":"Hello","body":"From the playground"}' },
+      // Logic requires a configuration and the three connection/response strings.
+      body: {
+        configurationName: '<configuration name>',
+        userIds: ['<user id>'],
+        denormalizedPayload: '{"title":"Hello","body":"From the playground"}',
+        connectionId: 'playground',
+        responseKey: 'playground',
+        responseValue: '1',
+      },
     },
     {
       label: 'Send mail',

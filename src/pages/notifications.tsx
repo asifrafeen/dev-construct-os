@@ -4,12 +4,22 @@ import { BellRing, CheckCheck, Send, Smartphone } from 'lucide-react';
 import { useMe } from '@/features/users/hooks';
 import {
   describeNotification,
+  effectiveAudience,
   notificationId,
   notifier,
+  type NotificationAudience,
+  type NotificationConfig,
   type NotifyInput,
   type SubscriptionFilter,
 } from '@/features/notifications/api';
-import { useInbox, useMarkAllRead, useMarkRead, useNotify } from '@/features/notifications/hooks';
+import {
+  useInbox,
+  useMarkAllRead,
+  useMarkRead,
+  useNotificationConfigs,
+  useNotify,
+} from '@/features/notifications/hooks';
+import { BlocksError } from '@/lib/blocks-client';
 import { useRealtimeStatus } from '@/features/notifications/realtime';
 import {
   deviceName,
@@ -44,6 +54,7 @@ export function NotificationsPage() {
           </>
         }
         endpoints={[
+          'GET /logic/v4/Notification/Gets',
           'POST /logic/v4/Notifier/Notify',
           'GET /logic/v4/Notifier/GetNotifications',
           'POST /logic/v4/Notifier/MarkNotificationAsRead',
@@ -142,9 +153,81 @@ function InboxCard() {
 
 type Target = 'me' | 'users' | 'roles' | 'orgs' | 'filters';
 
+/** Who a send on this audience reaches, in one line; `warn` when that may surprise a tester. */
+function audienceNote(a: NotificationAudience): { text: string; warn: boolean } {
+  if (a.level === 1) {
+    return { text: 'All users: everyone in your organization gets it, not only the target below.', warn: true };
+  }
+  if (a.level === 2) {
+    const rules = [
+      a.userIds?.length ? `${a.userIds.length} user(s)` : '',
+      a.roles?.length ? `${a.roles.length} role(s)` : '',
+      a.permissions?.length ? `${a.permissions.length} permission(s)` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return a.alsoNamedUsers
+      ? { text: `Targeted: the target below (Owner)${rules ? `, plus ${rules}` : ''}.`, warn: false }
+      : { text: `Targeted without Owner: only ${rules || 'its own rules'} get it — the target below may not.`, warn: true };
+  }
+  return { text: 'Affected users only: the target below.', warn: false };
+}
+
+function ConfigDetails({ config }: { config: NotificationConfig }) {
+  const audience = audienceNote(effectiveAudience(config));
+  const channels = [
+    config.liveEnabled === false ? '' : 'In-app',
+    config.pushEnabled ? 'Push' : '',
+    config.enablePersistence ? 'Offline' : '',
+  ].filter(Boolean);
+  const push = config.pushTemplate;
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+      <DetailList
+        rows={[
+          ['Description', config.description],
+          [
+            'Channels',
+            channels.length > 0 ? (
+              <span className="flex flex-wrap gap-1">
+                {channels.map((c) => (
+                  <Badge key={c}>{c}</Badge>
+                ))}
+              </span>
+            ) : (
+              'None'
+            ),
+          ],
+          ['Audience', <span className={cn(audience.warn && 'text-amber-600 dark:text-amber-400')}>{audience.text}</span>],
+          ['Push text', push?.titleKey ? <code className="text-xs">{`${push.titleKey} / ${push.bodyKey}`}</code> : null],
+          ['Hub method', config.notifyMethod ? <code className="text-xs">{config.notifyMethod}</code> : null],
+        ]}
+      />
+      {config.isDisabled && (
+        <p className="text-xs text-destructive">Disabled in Blocks OS: the send is accepted, but nothing goes out.</p>
+      )}
+    </div>
+  );
+}
+
+function ConfigsError({ error }: { error: unknown }) {
+  if (error instanceof BlocksError && error.status === 403) {
+    return (
+      <ErrorNote error="Your role cannot list notification configurations. Give it the permission blocks-os::notification::gets (Roles page), then reload." />
+    );
+  }
+  return <ErrorNote error={error} />;
+}
+
+/**
+ * A test send for any configuration this app's users can receive. Logic needs a configuration
+ * for every send, and the configuration — not this form — decides channels and receivers.
+ */
 function SendCard() {
   const { data: me } = useMe();
   const notify = useNotify();
+  const configs = useNotificationConfigs();
+  const [configId, setConfigId] = useState('');
   const [target, setTarget] = useState<Target>('me');
   const [ids, setIds] = useState('');
   const [title, setTitle] = useState('Hello from Construct OS');
@@ -152,16 +235,17 @@ function SendCard() {
   const [rawPayload, setRawPayload] = useState('');
   const [filters, setFilters] = useState('[{ "context": "orders", "actionName": "created", "value": "*" }]');
   const [asObject, setAsObject] = useState(true);
-  const [configurationName, setConfigurationName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const config = configs.data?.find((c) => c.itemId === configId);
 
   const submit = () => {
     setError(null);
     try {
+      if (!config) throw new Error('Choose a configuration.');
       const input: NotifyInput = {
+        configurationName: config.name,
         denormalizedPayload: rawPayload.trim() || JSON.stringify({ title, body, sentAt: new Date().toISOString() }),
         saveDenormalizedPayloadAsAnObject: asObject,
-        ...(configurationName.trim() ? { configurationName: configurationName.trim() } : {}),
       };
       if (target === 'me') {
         if (!me?.itemId) throw new Error('No signed-in user id.');
@@ -180,12 +264,37 @@ function SendCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <BellRing className="h-4 w-4" /> Send a notification
+          <BellRing className="h-4 w-4" /> Send a test notification
         </CardTitle>
-        <CardDescription>Target at least one of users, roles or subscription filters.</CardDescription>
+        <CardDescription>
+          Pick a configuration for consumer users and a target. The configuration decides the channels and who
+          actually receives it.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <Select value={target} onChange={(e) => setTarget(e.target.value as Target)}>
+        <Select
+          aria-label="Configuration"
+          value={configId}
+          disabled={configs.isPending}
+          onChange={(e) => setConfigId(e.target.value)}
+        >
+          <option value="">{configs.isPending ? 'Loading configurations…' : 'Choose a configuration'}</option>
+          {configs.data?.map((c) => (
+            <option key={c.itemId} value={c.itemId}>
+              {c.name}
+              {c.isBuiltIn ? ' · built-in' : ''}
+              {c.isDisabled ? ' · disabled' : ''}
+            </option>
+          ))}
+        </Select>
+        {configs.isError && <ConfigsError error={configs.error} />}
+        {configs.data?.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No configuration for consumer users yet. Add one in Blocks OS → Notification.
+          </p>
+        )}
+        {config && <ConfigDetails config={config} />}
+        <Select aria-label="Target" value={target} onChange={(e) => setTarget(e.target.value as Target)}>
           <option value="me">Me ({me?.email ?? '…'})</option>
           <option value="users">User ids</option>
           <option value="roles">Roles (slugs)</option>
@@ -209,13 +318,8 @@ function SendCard() {
           value={rawPayload}
           onChange={(e) => setRawPayload(e.target.value)}
         />
-        <Input
-          placeholder="Configuration name (optional)"
-          value={configurationName}
-          onChange={(e) => setConfigurationName(e.target.value)}
-        />
         <Checkbox label="Save payload as an object" checked={asObject} onChange={setAsObject} />
-        <Button onClick={submit} disabled={notify.isPending}>
+        <Button onClick={submit} disabled={!config || notify.isPending}>
           <Send className="h-4 w-4" /> {notify.isPending ? 'Sending…' : 'Send'}
         </Button>
         {error && <ErrorNote error={error} />}
