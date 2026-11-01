@@ -199,7 +199,7 @@ async function openSession(config: PushWebConfig): Promise<Session> {
  * The worker reads the config from its own URL — it cannot import the bundle or reach this
  * page's state — and loads the Firebase CDN build of the same version as the bundle.
  */
-function registerWorker(config: PushWebConfig, sdkVersion: string) {
+async function registerWorker(config: PushWebConfig, sdkVersion: string) {
   const qs = new URLSearchParams({
     apiKey: config.apiKey,
     appId: config.appId,
@@ -207,7 +207,40 @@ function registerWorker(config: PushWebConfig, sdkVersion: string) {
     projectId: config.projectId,
     v: sdkVersion,
   });
-  return navigator.serviceWorker.register(`${BASE}firebase-messaging-sw.js?${qs}`, { scope: SW_SCOPE });
+  const registration = await navigator.serviceWorker.register(`${BASE}firebase-messaging-sw.js?${qs}`, {
+    scope: SW_SCOPE,
+  });
+  await untilActive(registration);
+  return registration;
+}
+
+const WORKER_START_TIMEOUT_MS = 10_000;
+
+/**
+ * `register()` resolves before a new worker is active, and subscribing then fails with "no active
+ * Service Worker". Firebase waits for this only when it registers its own default worker, not for
+ * one handed to it, and `serviceWorker.ready` never resolves for a scope that controls no page.
+ */
+function untilActive(registration: ServiceWorkerRegistration): Promise<void> {
+  if (registration.active) return Promise.resolve();
+  const incoming = registration.installing ?? registration.waiting;
+  if (!incoming) return Promise.reject(new Error('The push service worker did not start.'));
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('The push service worker did not start in time.')),
+      WORKER_START_TIMEOUT_MS,
+    );
+    incoming.addEventListener('statechange', () => {
+      if (incoming.state === 'activated') {
+        clearTimeout(timer);
+        resolve();
+      } else if (incoming.state === 'redundant') {
+        clearTimeout(timer);
+        reject(new Error('The push service worker could not be installed.'));
+      }
+    });
+  });
 }
 
 /**
