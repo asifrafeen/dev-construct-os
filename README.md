@@ -145,7 +145,7 @@ src/
     data/              Gateway client, makeCrud, schema metadata → generic CRUD
     files/             DMS: presign/PUT/complete upload, versions, directories, objects, ACLs
     localization/      Runtime dictionaries, I18nProvider, language switcher
-    notifications/     Notifier inbox + SignalR hub (live events)
+    notifications/     Notifier inbox + SignalR hub (live events) + Firebase web push
     mail/              Templated send, mailbox, templates
     logic/             Workflows, webhooks, executions, scheduler, functions, proxies
     agents/            Agent list, SSE chat, conversations, voice session
@@ -173,7 +173,7 @@ src/
 | `/data` | Data | Schema browser → generic CRUD for any schema, bulk ops, GraphQL console, validations, regex, mock data |
 | `/storage` | Data | File manager: folders, uploads, versions, rename/move/copy, trash, sharing, access policies |
 | `/localization` | Localization | Languages/modules (public + tenant), dictionary browser, key lookup, missing keys |
-| `/notifications` | Logic | Inbox, send to users/roles/orgs/filters, live hub events |
+| `/notifications` | Logic | Inbox, send to users/roles/orgs/filters, live hub events, web push on/off for this browser |
 | `/mail` | Logic + OS | Templated send (+attachments), mailbox, templates, mail servers |
 | `/workflows` | Logic | Workflows, publish/versions, webhook trigger (live + draft), executions + logs, scheduler, functions, proxies |
 | `/agents` | Agents | Streaming chat, conversation history, voice session token |
@@ -187,6 +187,25 @@ src/
 
 Static endpoints served by nginx for Monitor/Release checks: `GET /healthz` (`{"status":"ok"}`)
 and `GET /version.json` (build metadata, never cached).
+
+## Web push
+
+No Firebase value lives in this repo. Blocks OS stores the project's Firebase settings, and
+the app reads the public part from `GET /logic/v4/Notifier/push-web-config` at runtime.
+
+1. **Firebase console:** enable *Cloud Messaging API (V1)*, generate a service account key
+   (Project settings → Service accounts), register a web app (its `firebaseConfig`), and
+   generate a Web Push certificate key pair (Cloud Messaging → *VAPID* key).
+2. **Blocks OS → Notifications → Push settings** for this project: upload the key, paste the
+   web config and the VAPID key, switch Push and Web on.
+3. **Blocks OS → Notifications:** a configuration with the Push channel, its title/body as
+   localization keys, audience *Consumer users*.
+4. **This app → Notifications → Push on this browser → Turn on push**, then send yourself a
+   notification with that configuration's name.
+
+`public/firebase-messaging-sw.js` shows pushes while no tab is visible. It gets the config
+and the SDK version from its query string, so it never needs editing. Turning push on is per
+user and per browser; sign-out removes the device from Blocks first.
 
 ## Release build args
 

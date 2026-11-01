@@ -61,6 +61,25 @@ export interface InboxQuery {
   sortDescending?: boolean;
 }
 
+/** The Firebase web config Blocks OS stores per project; the browser needs it to register for push. */
+export interface PushWebConfig {
+  apiKey: string;
+  appId: string;
+  messagingSenderId: string;
+  vapidKey: string;
+  projectId: string;
+}
+
+/** Notifier answers refusals with 200 and `isSuccess: false`, not an HTTP error. */
+export interface NotifierAck {
+  isSuccess?: boolean;
+  errors?: Record<string, string> | null;
+}
+
+export interface PushWebConfigResponse extends NotifierAck {
+  data?: PushWebConfig | null;
+}
+
 export const notificationId = (n: InboxNotification) => String(n.id ?? n.itemId ?? '');
 
 /**
@@ -123,4 +142,21 @@ export const notifier = {
     if (filter.value) qs.set('SubscriptionFilterData.Value', filter.value);
     return blocksFetch<InboxNotification[]>(`${NOTIFIER_BASE}/GetUnreadNotificationsBySubscriptionFilter?${qs}`);
   },
+
+  /**
+   * `isSuccess: false` until Blocks OS has a service account key and a web config for the
+   * project, and both Push and its Web platform are switched on.
+   */
+  pushWebConfig: () => blocksFetch<PushWebConfigResponse>(`${NOTIFIER_BASE}/push-web-config`),
+
+  /** Registers (or refreshes) a device of the signed-in user. Blocks keeps 10 per user, dropping the oldest. */
+  registerDevice: (token: string, name: string) =>
+    blocksFetch<NotifierAck>(`${NOTIFIER_BASE}/devices`, {
+      method: 'POST',
+      body: { token, platform: 'web', name },
+    }),
+
+  /** 204, or 404 when the token is not one of the caller's devices. */
+  removeDevice: (token: string) =>
+    blocksFetch<unknown>(`${NOTIFIER_BASE}/devices/${encodeURIComponent(token)}`, { method: 'DELETE' }),
 };

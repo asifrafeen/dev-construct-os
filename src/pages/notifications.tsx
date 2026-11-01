@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { BellRing, CheckCheck, Send } from 'lucide-react';
+import { BellRing, CheckCheck, Send, Smartphone } from 'lucide-react';
 import { useMe } from '@/features/users/hooks';
 import {
   describeNotification,
@@ -11,11 +11,19 @@ import {
 } from '@/features/notifications/api';
 import { useInbox, useMarkAllRead, useMarkRead, useNotify } from '@/features/notifications/hooks';
 import { useRealtimeStatus } from '@/features/notifications/realtime';
+import {
+  deviceName,
+  disablePush,
+  enablePush,
+  refreshPush,
+  usePushStatus,
+  type PushState,
+} from '@/features/notifications/push';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Select, Textarea, parseJsonInput, splitList } from '@/components/ui/form';
-import { JsonView, PageHeader, Pager } from '@/components/ui/layout';
+import { CopyButton, DetailList, JsonView, PageHeader, Pager } from '@/components/ui/layout';
 import { cn, formatDate } from '@/lib/utils';
 
 const PAGE_SIZE = 10;
@@ -41,12 +49,16 @@ export function NotificationsPage() {
           'POST /logic/v4/Notifier/MarkNotificationAsRead',
           'POST /logic/v4/Notifier/MarkAllNotificationAsRead',
           'GET /logic/v4/Notifier/GetUnreadNotificationsBySubscriptionFilter',
+          'GET /logic/v4/Notifier/push-web-config',
+          'POST /logic/v4/Notifier/devices',
+          'DELETE /logic/v4/Notifier/devices/{token}',
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-2">
         <InboxCard />
         <div className="space-y-4">
           <SendCard />
+          <PushCard />
           <LiveCard />
           <SubscriptionCard />
         </div>
@@ -209,6 +221,118 @@ function SendCard() {
         {error && <ErrorNote error={error} />}
         {notify.isError && <ErrorNote error={notify.error} />}
         {notify.data && <JsonView value={notify.data} maxHeight="max-h-40" />}
+      </CardContent>
+    </Card>
+  );
+}
+
+const PUSH_TONE: Record<PushState, 'default' | 'success' | 'muted' | 'danger'> = {
+  idle: 'muted',
+  working: 'default',
+  unsupported: 'danger',
+  'not-set-up': 'muted',
+  blocked: 'danger',
+  off: 'muted',
+  on: 'success',
+  failed: 'danger',
+};
+
+const PUSH_HINT: Partial<Record<PushState, string>> = {
+  unsupported:
+    'This browser cannot receive web push. On iPhone and iPad only a site installed to the Home Screen (iOS 16.4+) can, and this app is not installable yet.',
+  'not-set-up':
+    'Web push is not set up for this project. In Blocks OS → Notifications → Push settings: upload the Firebase service account key, add the web config and VAPID key, and switch Push and Web on.',
+  blocked: "Notifications are blocked for this site. Allow them in the browser's site settings, then reload.",
+  off: 'Turn it on to register this browser with Blocks for your user.',
+  on: 'Registered. Send yourself a notification above with a configuration that has the Push channel — with this tab hidden or closed it arrives as a system notification.',
+};
+
+/**
+ * Web push for this browser through Firebase. The config comes from Blocks OS, not from this
+ * bundle, so the card works out what is possible before offering a button.
+ */
+function PushCard() {
+  const { data: me } = useMe();
+  const userId = me?.itemId;
+  const { state, detail, projectId, token, received, clearReceived } = usePushStatus();
+
+  useEffect(() => {
+    // The app shell may already be re-registering an opted-in user; only an untouched state is checked.
+    if (userId && usePushStatus.getState().state === 'idle') void refreshPush(userId);
+  }, [userId]);
+
+  const busy = state === 'working' || !userId;
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Smartphone className="h-4 w-4" /> Push on this browser
+          </CardTitle>
+          <CardDescription>Firebase web push, delivered by the Blocks Notifier even with the app closed.</CardDescription>
+        </div>
+        <Badge tone={PUSH_TONE[state]}>{state}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {PUSH_HINT[state] && <p className="text-sm text-muted-foreground">{PUSH_HINT[state]}</p>}
+        {detail && (state === 'failed' ? <ErrorNote error={detail} /> : <p className="text-xs text-muted-foreground">{detail}</p>)}
+
+        <div className="flex flex-wrap gap-2">
+          {state === 'off' && (
+            <Button disabled={busy} onClick={() => userId && void enablePush(userId)}>
+              Turn on push
+            </Button>
+          )}
+          {state === 'on' && (
+            <Button variant="outline" disabled={busy} onClick={() => userId && void disablePush(userId)}>
+              Turn off
+            </Button>
+          )}
+          {(state === 'failed' || state === 'not-set-up') && (
+            <Button variant="outline" disabled={busy} onClick={() => userId && void refreshPush(userId)}>
+              Check again
+            </Button>
+          )}
+          {state === 'working' && <Spinner label="Working…" />}
+        </div>
+
+        {state === 'on' && token && (
+          <DetailList
+            rows={[
+              ['Firebase project', projectId],
+              ['Device', deviceName()],
+              [
+                'Token',
+                <span className="flex items-center gap-1">
+                  <code className="truncate text-[11px]">{token.slice(0, 24)}…</code>
+                  <CopyButton text={token} />
+                </span>,
+              ],
+            ]}
+          />
+        )}
+
+        {received.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Received while this tab was open</p>
+              <Button variant="ghost" size="sm" onClick={clearReceived}>
+                Clear
+              </Button>
+            </div>
+            <ul className="space-y-2">
+              {received.map((p) => (
+                <li key={p.id}>
+                  <p className="text-sm font-medium">{p.title}</p>
+                  {p.body && <p className="text-xs text-muted-foreground">{p.body}</p>}
+                  <p className="text-[11px] text-muted-foreground">{formatDate(p.at)}</p>
+                  <JsonView className="mt-1" value={p.payload} maxHeight="max-h-40" />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

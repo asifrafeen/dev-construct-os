@@ -9,12 +9,15 @@ import {
 } from './mfa';
 import { useAuthStore } from '@/state/auth-store';
 import { ME_KEY } from '@/features/users/hooks';
+import { forgetPushDevice } from '@/features/notifications/push';
 
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
       try {
+        // While the session still exists: removing the push device needs it. Never throws.
+        await forgetPushDevice();
         await logout();
       } finally {
         // Always fall back to a signed-out UI, even if the network call failed.

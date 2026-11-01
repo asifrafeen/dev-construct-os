@@ -41,6 +41,7 @@ import { useT } from '@/features/localization/i18n';
 import { LanguageSwitcher } from '@/features/localization/language-switcher';
 import { useUnreadCount } from '@/features/notifications/hooks';
 import { useNotificationStream } from '@/features/notifications/use-notification-stream';
+import { useWebPush } from '@/features/notifications/use-web-push';
 import { useHeartbeatLoop } from '@/features/monitor/api';
 import { useApiLog } from '@/state/api-log';
 import { Button } from '@/components/ui/button';
@@ -233,9 +234,10 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
-  // Live notifications, and the optional Monitor heartbeat, for as long as the signed-in
-  // area is mounted.
+  // Live notifications, web push, and the optional Monitor heartbeat, for as long as the
+  // signed-in area is mounted.
   useNotificationStream();
+  useWebPush();
   useHeartbeatLoop();
 
   useEffect(() => setMobileOpen(false), [location.pathname]);
