@@ -6,7 +6,11 @@ COPY package*.json ./
 
 RUN npm ci
 
-COPY . .
+# Only what the build reads — never the whole context, so local files such as .env
+# or admin scripts can't end up in a layer.
+COPY index.html vite.config.ts tsconfig.json postcss.config.js tailwind.config.js ./
+COPY public ./public
+COPY src ./src
 
 ARG ci_build=dev
 
