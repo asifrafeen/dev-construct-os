@@ -41,6 +41,19 @@ export function formatRelative(value?: string | null) {
   return rtf.format(0, 'second');
 }
 
+/** Text for a loosely typed API value: primitives as-is, objects as JSON rather than "[object Object]". */
+export function toText(value: unknown, fallback = ''): string {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value as string | number | boolean | bigint | symbol);
+}
+
 /** A user's best available label: full name, then email, then a neutral placeholder. */
 export function displayName(user: {
   firstName?: string;

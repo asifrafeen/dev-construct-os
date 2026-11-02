@@ -16,7 +16,7 @@ import { JsonView } from '@/components/ui/layout';
  * subtractive. Preview first — it reports how many users the change would touch; the real
  * call is queued (202) and lands asynchronously, so the list may lag a moment.
  */
-export function BulkRolesModal({ selectedIds, onClose }: { selectedIds: string[]; onClose: () => void }) {
+export function BulkRolesModal({ selectedIds, onClose }: Readonly<{ selectedIds: string[]; onClose: () => void }>) {
   const qc = useQueryClient();
   const { activeOrgId } = useActiveOrg();
   const roles = useRoles({ pageSize: 100 });

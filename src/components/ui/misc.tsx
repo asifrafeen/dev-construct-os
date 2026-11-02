@@ -40,7 +40,7 @@ export function Badge({
   );
 }
 
-export function Spinner({ label }: { label?: string }) {
+export function Spinner({ label }: Readonly<{ label?: string }>) {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <Loader2 className="h-4 w-4 animate-spin" />
@@ -53,11 +53,11 @@ export function EmptyState({
   title,
   description,
   action,
-}: {
+}: Readonly<{
   title: string;
   description?: string;
   action?: React.ReactNode;
-}) {
+}>) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-10 text-center">
       <p className="font-medium">{title}</p>
@@ -67,11 +67,35 @@ export function EmptyState({
   );
 }
 
-export function ErrorNote({ error }: { error: unknown }) {
+export function ErrorNote({ error }: Readonly<{ error: unknown }>) {
   const message = error instanceof Error ? error.message : String(error);
   return (
     <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
       {message}
     </p>
   );
+}
+
+/**
+ * The loading → error → empty → content ladder every list screen renders.
+ * Pass `children` as a function when the content reads data that only exists
+ * once the query has succeeded, so it is not evaluated while pending.
+ */
+export function QueryState({
+  query,
+  empty,
+  emptyState,
+  loadingLabel,
+  children,
+}: Readonly<{
+  query: { isPending: boolean; isError: boolean; error: unknown };
+  empty?: boolean;
+  emptyState?: React.ReactNode;
+  loadingLabel?: string;
+  children: React.ReactNode | (() => React.ReactNode);
+}>) {
+  if (query.isPending) return <Spinner label={loadingLabel} />;
+  if (query.isError) return <ErrorNote error={query.error} />;
+  if (empty) return emptyState;
+  return typeof children === 'function' ? children() : children;
 }

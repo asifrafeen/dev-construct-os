@@ -5,6 +5,7 @@ import { Blocks, Loader2, ShieldAlert } from 'lucide-react';
 import { finishLogin } from '@/features/auth/sso';
 import { ME_KEY } from '@/features/users/hooks';
 import { Button } from '@/components/ui/button';
+import { toText } from '@/lib/utils';
 
 /** Mounted at the registered redirectUri. This is where the session cookie gets set. */
 export function LoginCallbackPage() {
@@ -17,7 +18,7 @@ export function LoginCallbackPage() {
     if (ran.current) return;
     ran.current = true;
 
-    finishLogin(window.location.search)
+    finishLogin(globalThis.location.search)
       .then(async (forwardedTo) => {
         // The cookie now exists; re-run /iam/me so the app picks up the new session.
         await qc.invalidateQueries({ queryKey: ME_KEY });
@@ -27,7 +28,7 @@ export function LoginCallbackPage() {
   }, [navigate, qc]);
 
   if (error != null) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : toText(error);
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <div className="w-full max-w-md space-y-5 text-center">

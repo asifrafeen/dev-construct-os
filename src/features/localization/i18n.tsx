@@ -50,7 +50,7 @@ interface I18nValue {
 
 const I18nContext = createContext<I18nValue | null>(null);
 
-export function I18nProvider({ children }: { children: ReactNode }) {
+export function I18nProvider({ children }: Readonly<{ children: ReactNode }>) {
   const { language: stored, setLanguage } = useStoredLanguage();
 
   const languages = useQuery({

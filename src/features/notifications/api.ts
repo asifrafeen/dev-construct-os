@@ -1,5 +1,6 @@
 import { blocksFetch } from '@/lib/blocks-client';
 import { BLOCKS } from '@/lib/env';
+import { toText } from '@/lib/utils';
 
 /**
  * Notifier — push a notification to users/roles/subscribers, and read the signed-in
@@ -150,9 +151,9 @@ export function describeNotification(n: InboxNotification): { title: string; bod
   if (obj) {
     const title = obj.title ?? obj.Title ?? obj.subject ?? obj.Subject ?? obj.name ?? 'Notification';
     const body = obj.body ?? obj.Body ?? obj.message ?? obj.Message ?? obj.text ?? JSON.stringify(obj);
-    return { title: String(title), body: String(body) };
+    return { title: toText(title), body: toText(body) };
   }
-  return { title: 'Notification', body: raw === undefined || raw === null ? '' : String(raw) };
+  return { title: 'Notification', body: toText(raw) };
 }
 
 export const notifier = {

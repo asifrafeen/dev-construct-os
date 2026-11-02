@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type SubmitEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Building2, Check, Loader2, MailCheck, Plus, UserPlus, X } from 'lucide-react';
@@ -138,7 +138,44 @@ function fieldLabel(key: string): string {
 }
 
 const spaceCase = (value: string): string =>
-  value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+  value.replaceAll(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+
+/**
+ * Attribute keys IAM would refuse, plus duplicates.
+ *
+ * Both matter because neither is an error server-side — the normalizer drops a bad
+ * key and the last duplicate wins — so without stopping here the user would submit
+ * successfully and quietly lose data.
+ */
+function findAttributeProblems(attributes: AttributeRow[]): Map<number, string> {
+  const problems = new Map<number, string>();
+  const seenKeys = new Map<string, number>();
+  for (const row of attributes) {
+    const key = row.key.trim();
+    if (!key) continue;
+    const problem = attributeKeyProblem(key);
+    if (problem) {
+      problems.set(row.id, problem);
+      continue;
+    }
+    const firstSeen = seenKeys.get(key);
+    if (firstSeen === undefined) seenKeys.set(key, row.id);
+    else problems.set(row.id, 'Already used above.');
+  }
+  return problems;
+}
+
+function SubmitLabel({ busy, label }: Readonly<{ busy: boolean; label: string }>) {
+  if (busy) {
+    return (
+      <>
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Creating your account…
+      </>
+    );
+  }
+  return label;
+}
 
 export function SignupPage() {
   const [firstName, setFirstName] = useState('');
@@ -234,35 +271,15 @@ export function SignupPage() {
   const removeAttribute = (id: number) =>
     setAttributes((rows) => rows.filter((row) => row.id !== id));
 
-  /**
-   * Attribute keys IAM would refuse, plus duplicates.
-   *
-   * Both matter because neither is an error server-side — the normalizer drops a bad
-   * key and the last duplicate wins — so without stopping here the user would submit
-   * successfully and quietly lose data.
-   */
-  const attributeProblems = new Map<number, string>();
-  const seenKeys = new Map<string, number>();
-  for (const row of attributes) {
-    const key = row.key.trim();
-    if (!key) continue;
-    const problem = attributeKeyProblem(key);
-    if (problem) {
-      attributeProblems.set(row.id, problem);
-      continue;
-    }
-    const firstSeen = seenKeys.get(key);
-    if (firstSeen !== undefined) attributeProblems.set(row.id, 'Already used above.');
-    else seenKeys.set(key, row.id);
-  }
+  const attributeProblems = findAttributeProblems(attributes);
 
-  function onContinue(event: FormEvent) {
+  function onContinue(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setStep('organization');
   }
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError(null);
@@ -640,14 +657,7 @@ export function SignupPage() {
               busy || captcha.blocking || orgName.trim().length === 0 || attributeProblems.size > 0
             }
           >
-            {busy ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Creating your account…
-              </>
-            ) : (
-              'Create account'
-            )}
+            <SubmitLabel busy={busy} label="Create account" />
           </Button>
 
           <button
@@ -758,16 +768,7 @@ export function SignupPage() {
           className="w-full"
           disabled={busy || (!withOrganization && captcha.blocking)}
         >
-          {busy ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Creating your account…
-            </>
-          ) : withOrganization ? (
-            'Continue'
-          ) : (
-            'Create account'
-          )}
+          <SubmitLabel busy={busy} label={withOrganization ? 'Continue' : 'Create account'} />
         </Button>
 
         {withOrganization && (

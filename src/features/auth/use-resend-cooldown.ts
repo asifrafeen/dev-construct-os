@@ -40,8 +40,8 @@ export function useResendCooldown(seconds: number = RESEND_COOLDOWN_SECONDS): Re
     };
 
     tick(); // paint the first value now, not a quarter-second late
-    const id = window.setInterval(tick, 250);
-    return () => window.clearInterval(id);
+    const id = globalThis.setInterval(tick, 250);
+    return () => globalThis.clearInterval(id);
   }, [endsAt]);
 
   const start = useCallback(() => setEndsAt(Date.now() + seconds * 1000), [seconds]);

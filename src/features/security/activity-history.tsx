@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Pager } from '@/components/ui/layout';
-import { EmptyState, ErrorNote, Spinner } from '@/components/ui/misc';
+import { EmptyState, QueryState } from '@/components/ui/misc';
 import { cn, formatDate, formatRelative } from '@/lib/utils';
 import { security, type ActivityItem } from './api';
 import { securityErrorMessage } from './errors';
@@ -45,13 +45,11 @@ export function ActivityHistory() {
         <CardDescription>Sign-ins and changes to your account, newest first.</CardDescription>
       </CardHeader>
       <CardContent>
-        {activity.isPending ? (
-          <Spinner />
-        ) : activity.isError ? (
-          <ErrorNote error={securityErrorMessage(activity.error)} />
-        ) : !items.length ? (
-          <EmptyState title="No activity yet" description="Your account activity will show up here." />
-        ) : (
+        <QueryState
+          query={{ isPending: activity.isPending, isError: activity.isError, error: securityErrorMessage(activity.error) }}
+          empty={items.length === 0}
+          emptyState={<EmptyState title="No activity yet" description="Your account activity will show up here." />}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -79,7 +77,7 @@ export function ActivityHistory() {
               </tbody>
             </table>
           </div>
-        )}
+        </QueryState>
         {total > PAGE_SIZE && (
           <Pager zeroBased page={page} pageCount={Math.ceil(total / PAGE_SIZE)} total={total} onChange={setPage} />
         )}

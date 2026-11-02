@@ -331,7 +331,7 @@ export function signupFailure(error: unknown): SignupFailure | null {
   if (!body || typeof body !== 'object') return null;
 
   const parsed = body as AccountResponse & { organizationNameSuggestions?: unknown };
-  const errors = (parsed.errors ?? {}) as Record<string, string>;
+  const errors = parsed.errors ?? {};
   const keys = Object.keys(errors);
   if (keys.length === 0) return null;
 

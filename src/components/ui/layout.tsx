@@ -12,12 +12,12 @@ export function PageHeader({
   description,
   endpoints,
   actions,
-}: {
+}: Readonly<{
   title: string;
   description?: React.ReactNode;
   endpoints?: string[];
   actions?: React.ReactNode;
-}) {
+}>) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
@@ -43,12 +43,12 @@ export function Tabs<T extends string>({
   value,
   onChange,
   className,
-}: {
+}: Readonly<{
   tabs: { value: T; label: React.ReactNode }[];
   value: T;
   onChange: (value: T) => void;
   className?: string;
-}) {
+}>) {
   return (
     <div className={cn('flex flex-wrap gap-1 border-b', className)} role="tablist">
       {tabs.map((t) => (
@@ -76,18 +76,18 @@ export function JsonView({
   value,
   className,
   maxHeight = 'max-h-96',
-}: {
+}: Readonly<{
   value: unknown;
   className?: string;
   maxHeight?: string;
-}) {
+}>) {
   const text = React.useMemo(() => {
     if (value === undefined) return '—';
     if (typeof value === 'string') return value;
     try {
       return JSON.stringify(value, null, 2);
     } catch {
-      return String(value);
+      return typeof value === 'bigint' || Array.isArray(value) ? String(value) : Object.prototype.toString.call(value);
     }
   }, [value]);
 
@@ -107,7 +107,7 @@ export function JsonView({
   );
 }
 
-export function CopyButton({ text, className }: { text: string; className?: string }) {
+export function CopyButton({ text, className }: Readonly<{ text: string; className?: string }>) {
   const [copied, setCopied] = React.useState(false);
   return (
     <Button
@@ -129,7 +129,7 @@ export function CopyButton({ text, className }: { text: string; className?: stri
 }
 
 /** Two-column definition list for record details. */
-export function DetailList({ rows }: { rows: [string, React.ReactNode][] }) {
+export function DetailList({ rows }: Readonly<{ rows: [string, React.ReactNode][] }>) {
   return (
     <dl className="grid grid-cols-[minmax(7rem,11rem)_1fr] gap-x-3 gap-y-2 text-sm">
       {rows.map(([k, v]) => (
@@ -148,14 +148,14 @@ export function Pager({
   onChange,
   total,
   zeroBased = false,
-}: {
+}: Readonly<{
   page: number;
   pageCount: number;
   onChange: (page: number) => void;
   total?: number;
   /** IAM pages from 0, Data and most others from 1. */
   zeroBased?: boolean;
-}) {
+}>) {
   const first = zeroBased ? 0 : 1;
   const last = Math.max(first, pageCount - (zeroBased ? 1 : 0));
   return (

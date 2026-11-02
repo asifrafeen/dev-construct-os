@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Laptop, Monitor, Smartphone, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,7 @@ import { DetailList } from '@/components/ui/layout';
 import { Badge, EmptyState, ErrorNote, Spinner } from '@/components/ui/misc';
 import { Modal } from '@/components/ui/modal';
 import { formatDate, formatRelative } from '@/lib/utils';
-import { security, sessionStatusLabel, type RevokeResult, type SessionRow } from './api';
+import { security, sessionStatusLabel, type RevokeResult, type SessionDetails, type SessionRow } from './api';
 import { securityErrorMessage } from './errors';
 
 /**
@@ -69,6 +69,57 @@ export function SessionList() {
       new Date(b.lastActivityAt ?? 0).getTime() - new Date(a.lastActivityAt ?? 0).getTime(),
   );
 
+  let body: ReactNode;
+  if (sessions.isPending) {
+    body = <Spinner />;
+  } else if (sessions.isError) {
+    body = <ErrorNote error={securityErrorMessage(sessions.error)} />;
+  } else if (rows.length) {
+    body = (
+      <ul className="divide-y rounded-lg border">
+        {rows.map((s) => {
+          const Icon = deviceIcon(s.primaryOperatingSystem);
+          return (
+            <li key={s.sessionId} className="flex items-center justify-between gap-2 hover:bg-muted/30">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left"
+                onClick={() => setDetailId(s.sessionId)}
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="block min-w-0">
+                  <span className="block truncate font-medium">{s.primaryDeviceName || 'Unknown device'}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {browserOnOs(s.primaryBrowser, s.primaryOperatingSystem)} · {appSummary(s.applicationCount)}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground" title={formatDate(s.lastActivityAt)}>
+                    {s.primaryIpAddress || '—'} · last active {formatRelative(s.lastActivityAt)}
+                  </span>
+                </span>
+              </button>
+              <div className="flex shrink-0 items-center gap-2 py-3 pr-4">
+                {s.isCurrent && <Badge>This device</Badge>}
+                {isActive(s) ? (
+                  !s.isCurrent && (
+                    <Button variant="outline" size="sm" onClick={() => setConfirming(s)}>
+                      Sign out
+                    </Button>
+                  )
+                ) : (
+                  <Badge tone="muted">{sessionStatusLabel(s.status)}</Badge>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  } else {
+    body = <EmptyState title="No sessions" description="You're not signed in on any other devices." />;
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -79,53 +130,7 @@ export function SessionList() {
       </CardHeader>
       <CardContent className="space-y-3">
         {notice && <p className="text-sm text-emerald-600">{notice}</p>}
-        {sessions.isPending ? (
-          <Spinner />
-        ) : sessions.isError ? (
-          <ErrorNote error={securityErrorMessage(sessions.error)} />
-        ) : !rows.length ? (
-          <EmptyState title="No sessions" description="You're not signed in on any other devices." />
-        ) : (
-          <ul className="divide-y rounded-lg border">
-            {rows.map((s) => {
-              const Icon = deviceIcon(s.primaryOperatingSystem);
-              return (
-                <li key={s.sessionId} className="flex items-center justify-between gap-2 hover:bg-muted/30">
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left"
-                    onClick={() => setDetailId(s.sessionId)}
-                  >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span className="block min-w-0">
-                      <span className="block truncate font-medium">{s.primaryDeviceName || 'Unknown device'}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {browserOnOs(s.primaryBrowser, s.primaryOperatingSystem)} · {appSummary(s.applicationCount)}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground" title={formatDate(s.lastActivityAt)}>
-                        {s.primaryIpAddress || '—'} · last active {formatRelative(s.lastActivityAt)}
-                      </span>
-                    </span>
-                  </button>
-                  <div className="flex shrink-0 items-center gap-2 py-3 pr-4">
-                    {s.isCurrent && <Badge>This device</Badge>}
-                    {!isActive(s) ? (
-                      <Badge tone="muted">{sessionStatusLabel(s.status)}</Badge>
-                    ) : (
-                      !s.isCurrent && (
-                        <Button variant="outline" size="sm" onClick={() => setConfirming(s)}>
-                          Sign out
-                        </Button>
-                      )
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        {body}
       </CardContent>
 
       {confirming && (
@@ -157,11 +162,11 @@ function ConfirmSignOut({
   session,
   onClose,
   onDone,
-}: {
+}: Readonly<{
   session: SessionRow;
   onClose: () => void;
   onDone: (message: string) => void;
-}) {
+}>) {
   const revoke = useRevokeSession(onDone);
   return (
     <Modal
@@ -188,15 +193,28 @@ function ConfirmSignOut({
   );
 }
 
+type SessionOverview = NonNullable<SessionDetails['overview']>;
+
+/** The overview as a session row, for the sign-out confirmation. */
+function overviewToRow(sessionId: string, overview: SessionOverview): SessionRow {
+  return {
+    sessionId,
+    primaryDeviceName: overview.deviceName ?? undefined,
+    primaryBrowser: overview.browser ?? undefined,
+    primaryOperatingSystem: overview.operatingSystem ?? undefined,
+    primaryIpAddress: overview.ipAddress ?? undefined,
+  };
+}
+
 function SessionDetailsModal({
   sessionId,
   onClose,
   onSignOut,
-}: {
+}: Readonly<{
   sessionId: string;
   onClose: () => void;
   onSignOut: (row: SessionRow) => void;
-}) {
+}>) {
   const detail = useQuery({
     queryKey: ['iam', 'security', 'session', sessionId],
     queryFn: () => security.session(sessionId),
@@ -204,6 +222,23 @@ function SessionDetailsModal({
   });
   const overview = detail.data?.overview;
   const canSignOut = !!overview && !overview.isCurrent && isActive(overview);
+
+  let body: ReactNode;
+  if (detail.isPending) {
+    body = <Spinner />;
+  } else if (detail.isError) {
+    body = <ErrorNote error={securityErrorMessage(detail.error)} />;
+  } else if (overview) {
+    body = (
+      <SessionDetailsBody
+        overview={overview}
+        applications={detail.data.applications}
+        timeline={detail.data.timeline}
+      />
+    );
+  } else {
+    body = <EmptyState title="Session not found" />;
+  }
 
   return (
     <Modal
@@ -214,97 +249,92 @@ function SessionDetailsModal({
       className="max-w-2xl"
       footer={
         canSignOut ? (
-          <Button
-            variant="outline"
-            onClick={() =>
-              onSignOut({
-                sessionId,
-                primaryDeviceName: overview.deviceName ?? undefined,
-                primaryBrowser: overview.browser ?? undefined,
-                primaryOperatingSystem: overview.operatingSystem ?? undefined,
-                primaryIpAddress: overview.ipAddress ?? undefined,
-              })
-            }
-          >
+          <Button variant="outline" onClick={() => onSignOut(overviewToRow(sessionId, overview))}>
             Sign out of this device
           </Button>
         ) : undefined
       }
     >
-      {detail.isPending ? (
-        <Spinner />
-      ) : detail.isError ? (
-        <ErrorNote error={securityErrorMessage(detail.error)} />
-      ) : !overview ? (
-        <EmptyState title="Session not found" />
-      ) : (
-        <>
-          <DetailList
-            rows={[
-              [
-                'Status',
-                <span className="flex items-center gap-2">
-                  <Badge tone={isActive(overview) ? 'success' : 'muted'}>{sessionStatusLabel(overview.status)}</Badge>
-                  {overview.isCurrent && <Badge>This device</Badge>}
-                </span>,
-              ],
-              ['Device', [overview.deviceName, overview.deviceModel].filter(Boolean).join(' · ') || '—'],
-              ['Browser', browserOnOs(overview.browser, overview.operatingSystem)],
-              ['IP address', [overview.ipAddress, overview.location].filter(Boolean).join(' · ') || '—'],
-              ['Started', formatDate(overview.startedAt)],
-              ['Last active', `${formatRelative(overview.lastActivityAt)} · ${formatDate(overview.lastActivityAt)}`],
-              ['Idle expiry', formatDate(overview.idleExpiry)],
-              ['Absolute expiry', formatDate(overview.absoluteExpiry)],
-            ]}
-          />
-
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium">Apps on this session</h3>
-            {!detail.data?.applications?.length ? (
-              <p className="text-sm text-muted-foreground">None recorded.</p>
-            ) : (
-              <ul className="divide-y rounded-md border text-sm">
-                {detail.data.applications.map((app, i) => (
-                  <li key={`${app.clientId}-${i}`} className="space-y-0.5 px-3 py-2">
-                    <p className="flex items-center justify-between gap-2">
-                      <span className="truncate font-medium">{app.clientName || app.clientId || 'Unknown app'}</span>
-                      <Badge tone={isActive(app) ? 'success' : 'muted'}>{sessionStatusLabel(app.status)}</Badge>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {[
-                        app.grantType,
-                        `expires ${formatDate(app.expiresAt)}`,
-                        app.rotationCount ? `rotated ${app.rotationCount}×, last ${formatRelative(app.lastRotationAt)}` : null,
-                        app.revokeReason ? `revoked: ${app.revokeReason}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium">Timeline</h3>
-            {!detail.data?.timeline?.length ? (
-              <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
-            ) : (
-              <ol className="max-h-64 space-y-2 overflow-y-auto border-l pl-4 text-sm">
-                {detail.data.timeline.map((t, i) => (
-                  <li key={`${t.at}-${i}`}>
-                    <p className="font-medium">{t.event || String(t.type ?? 'Event')}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {[formatDate(t.at), t.outcome, t.reasonCode, t.clientId, t.ipAddress].filter(Boolean).join(' · ')}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
-        </>
-      )}
+      {body}
     </Modal>
+  );
+}
+
+function SessionDetailsBody({
+  overview,
+  applications,
+  timeline,
+}: Readonly<{
+  overview: SessionOverview;
+  applications: SessionDetails['applications'];
+  timeline: SessionDetails['timeline'];
+}>) {
+  return (
+    <>
+      <DetailList
+        rows={[
+          [
+            'Status',
+            <span key="status" className="flex items-center gap-2">
+              <Badge tone={isActive(overview) ? 'success' : 'muted'}>{sessionStatusLabel(overview.status)}</Badge>
+              {overview.isCurrent && <Badge>This device</Badge>}
+            </span>,
+          ],
+          ['Device', [overview.deviceName, overview.deviceModel].filter(Boolean).join(' · ') || '—'],
+          ['Browser', browserOnOs(overview.browser, overview.operatingSystem)],
+          ['IP address', [overview.ipAddress, overview.location].filter(Boolean).join(' · ') || '—'],
+          ['Started', formatDate(overview.startedAt)],
+          ['Last active', `${formatRelative(overview.lastActivityAt)} · ${formatDate(overview.lastActivityAt)}`],
+          ['Idle expiry', formatDate(overview.idleExpiry)],
+          ['Absolute expiry', formatDate(overview.absoluteExpiry)],
+        ]}
+      />
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium">Apps on this session</h3>
+        {applications?.length ? (
+          <ul className="divide-y rounded-md border text-sm">
+            {applications.map((app, i) => (
+              <li key={`${app.clientId}-${i}`} className="space-y-0.5 px-3 py-2">
+                <p className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">{app.clientName || app.clientId || 'Unknown app'}</span>
+                  <Badge tone={isActive(app) ? 'success' : 'muted'}>{sessionStatusLabel(app.status)}</Badge>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {[
+                    app.grantType,
+                    `expires ${formatDate(app.expiresAt)}`,
+                    app.rotationCount ? `rotated ${app.rotationCount}×, last ${formatRelative(app.lastRotationAt)}` : null,
+                    app.revokeReason ? `revoked: ${app.revokeReason}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">None recorded.</p>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium">Timeline</h3>
+        {timeline?.length ? (
+          <ol className="max-h-64 space-y-2 overflow-y-auto border-l pl-4 text-sm">
+            {timeline.map((t, i) => (
+              <li key={`${t.at}-${i}`}>
+                <p className="font-medium">{t.event || String(t.type ?? 'Event')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {[formatDate(t.at), t.outcome, t.reasonCode, t.clientId, t.ipAddress].filter(Boolean).join(' · ')}
+                </p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
+        )}
+      </section>
+    </>
   );
 }

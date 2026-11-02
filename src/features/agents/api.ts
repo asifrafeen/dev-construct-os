@@ -1,6 +1,7 @@
 import { blocksFetch, BlocksError } from '@/lib/blocks-client';
 import { BLOCKS } from '@/lib/env';
 import { trackedFetch } from '@/lib/tracked-fetch';
+import { toText } from '@/lib/utils';
 
 /**
  * Blocks AI Agents — list agents, chat with one, browse conversation history, and open a
@@ -35,7 +36,7 @@ export interface Agent {
   [k: string]: unknown;
 }
 
-export const agentId = (a: Agent) => String(a.id ?? a.agentId ?? a.agent_id ?? a.itemId ?? '');
+export const agentId = (a: Agent) => toText(a.id ?? a.agentId ?? a.agent_id ?? a.itemId);
 
 export interface Conversation {
   id?: string;

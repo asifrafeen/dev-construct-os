@@ -63,7 +63,7 @@ export function describeAuthError(status: number, body: unknown): string {
   // condition only inside the description.
   const haystack = `${code} ${description}`.toLowerCase();
   const matched = Object.keys(ERROR_HELP).find(
-    (key) => haystack.includes(key) || haystack.includes(key.replace(/_/g, ' ')),
+    (key) => haystack.includes(key) || haystack.includes(key.replaceAll('_', ' ')),
   );
 
   if (matched) return ERROR_HELP[matched];
@@ -116,8 +116,8 @@ export interface AccountResponse {
 /** First field message, or null when the response is a success. */
 export function accountErrorMessage(response: AccountResponse | undefined): string | null {
   if (response?.isSuccess) return null;
-  const messages = Object.values(response?.errors ?? {}).filter(Boolean);
-  return messages[0] ?? 'The request could not be completed. Please try again.';
+  const message = Object.values(response?.errors ?? {}).find(Boolean);
+  return message ?? 'The request could not be completed. Please try again.';
 }
 
 /**

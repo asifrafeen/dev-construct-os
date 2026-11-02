@@ -7,7 +7,7 @@ type Theme = 'light' | 'dark';
 function initialTheme(): Theme {
   const stored = localStorage.getItem('theme') as Theme | null;
   if (stored) return stored;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return globalThis.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
 export function ThemeToggle() {

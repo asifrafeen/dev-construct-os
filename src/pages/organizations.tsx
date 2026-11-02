@@ -14,12 +14,18 @@ import {
 import { authErrorMessage } from '@/features/auth/errors';
 import { useRoles } from '@/features/roles/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Field, Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/utils';
 
 const PAGE_SIZE = 20;
+
+function switchButtonContent(isActive: boolean, isSwitching: boolean): React.ReactNode {
+  if (isActive) return <Check className="h-4 w-4" />;
+  if (isSwitching) return <Loader2 className="h-4 w-4 animate-spin" />;
+  return 'Switch to';
+}
 
 export function OrganizationsPage() {
   const [search, setSearch] = useState('');
@@ -40,7 +46,8 @@ export function OrganizationsPage() {
 
   useEffect(() => setPage(0), [search]);
 
-  const { data, isPending, isError, error } = useOrgs({ page, pageSize: PAGE_SIZE, search });
+  const orgsQuery = useOrgs({ page, pageSize: PAGE_SIZE, search });
+  const { data } = orgsQuery;
   const rows = data?.organizations ?? [];
   const total = data?.totalCount ?? rows.length;
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
@@ -94,18 +101,18 @@ export function OrganizationsPage() {
             </div>
           )}
 
-          {isPending ? (
-            <Spinner />
-          ) : isError ? (
-            <ErrorNote error={error} />
-          ) : rows.length === 0 ? (
-            <EmptyState
-              title="No organizations"
-              description={
-                search ? 'Nothing matches your search.' : 'Create the first organization.'
-              }
-            />
-          ) : (
+          <QueryState
+            query={orgsQuery}
+            empty={rows.length === 0}
+            emptyState={
+              <EmptyState
+                title="No organizations"
+                description={
+                  search ? 'Nothing matches your search.' : 'Create the first organization.'
+                }
+              />
+            }
+          >
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -175,12 +182,9 @@ export function OrganizationsPage() {
                                 : 'You are not a member of this organization'
                             }
                           >
-                            {o.itemId === activeOrgId ? (
-                              <Check className="h-4 w-4" />
-                            ) : switchOrg.isPending && switchOrg.variables === o.itemId ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              'Switch to'
+                            {switchButtonContent(
+                              o.itemId === activeOrgId,
+                              switchOrg.isPending && switchOrg.variables === o.itemId,
                             )}
                           </Button>
                           <Button variant="ghost" size="sm" onClick={() => setViewing(o)}>
@@ -193,7 +197,7 @@ export function OrganizationsPage() {
                 </tbody>
               </table>
             </div>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
 
@@ -235,7 +239,7 @@ export function OrganizationsPage() {
  * member is the server's call, so rather than assume either way, the success step offers
  * the switch and reports plainly if it is refused.
  */
-function CreateOrgModal({ onClose }: { onClose: () => void }) {
+function CreateOrgModal({ onClose }: Readonly<{ onClose: () => void }>) {
   const create = useCreateOrg();
   const switchOrg = useSwitchOrg();
   // Default roles are slugs from the *active* org's role list — the new org has none yet.
@@ -361,6 +365,36 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
 
         {switchOrg.isError && <ErrorNote error={authErrorMessage(switchOrg.error)} />}
       </Modal>
+    );
+  }
+
+  const roleRows = rolesQuery.data?.data ?? [];
+  let roleChoices: React.ReactNode;
+  if (rolesQuery.isPending) {
+    roleChoices = <Spinner label="Loading roles…" />;
+  } else if (roleRows.length === 0) {
+    roleChoices = <p className="text-sm text-muted-foreground">No roles to choose from.</p>;
+  } else {
+    roleChoices = (
+      <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+        {roleRows
+          .filter((r) => !!r.slug && !r.isArchived)
+          .map((r) => (
+            <label
+              key={r.itemId}
+              className="flex cursor-pointer items-center gap-2 rounded-md p-1.5 text-sm hover:bg-accent"
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={defaultRoles.has(r.slug as string)}
+                onChange={() => toggleRole(r.slug as string)}
+              />
+              <span>{r.name}</span>
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{r.slug}</code>
+            </label>
+          ))}
+      </div>
     );
   }
 
@@ -526,31 +560,7 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
           label="Default roles for new members"
           hint="Granted automatically to anyone who joins. Listed from the organization you are currently in."
         >
-          {rolesQuery.isPending ? (
-            <Spinner label="Loading roles…" />
-          ) : !rolesQuery.data?.data?.length ? (
-            <p className="text-sm text-muted-foreground">No roles to choose from.</p>
-          ) : (
-            <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-              {rolesQuery.data.data
-                .filter((r) => !!r.slug && !r.isArchived)
-                .map((r) => (
-                  <label
-                    key={r.itemId}
-                    className="flex cursor-pointer items-center gap-2 rounded-md p-1.5 text-sm hover:bg-accent"
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={defaultRoles.has(r.slug as string)}
-                      onChange={() => toggleRole(r.slug as string)}
-                    />
-                    <span>{r.name}</span>
-                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{r.slug}</code>
-                  </label>
-                ))}
-            </div>
-          )}
+          {roleChoices}
         </Field>
 
         {create.isError && <ErrorNote error={create.error} />}
@@ -560,13 +570,14 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function OrgDetailModal({ org: listRow, onClose }: { org: Organization; onClose: () => void }) {
+function OrgDetailModal({ org: listRow, onClose }: Readonly<{ org: Organization; onClose: () => void }>) {
   const update = useUpdateOrg();
   const detail = useOrg(listRow.itemId);
   const org = detail.data ?? listRow;
 
   const addresses = org.addresses ?? [];
   const attributes = Object.entries(org.attributes ?? {});
+  const toggleLabel = org.isDisabled ? 'Enable' : 'Disable';
 
   return (
     <Modal
@@ -590,7 +601,7 @@ function OrgDetailModal({ org: listRow, onClose }: { org: Organization; onClose:
               )
             }
           >
-            {update.isPending ? 'Saving…' : org.isDisabled ? 'Enable' : 'Disable'}
+            {update.isPending ? 'Saving…' : toggleLabel}
           </Button>
         </>
       }
@@ -633,7 +644,7 @@ function OrgDetailModal({ org: listRow, onClose }: { org: Organization; onClose:
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Addresses</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {addresses.map((address, index) => (
-              <div key={index} className="rounded-md border p-3 text-sm">
+              <div key={JSON.stringify(address)} className="rounded-md border p-3 text-sm">
                 <p className="flex items-center gap-2 font-medium">
                   {address.name || `Address ${index + 1}`}
                   {address.isPrimary && <Badge tone="default">Primary</Badge>}
@@ -677,7 +688,7 @@ function OrgDetailModal({ org: listRow, onClose }: { org: Organization; onClose:
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>

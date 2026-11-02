@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from 'react';
+import { useState, type CSSProperties, type SubmitEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -91,6 +91,84 @@ const DOT_GRID: CSSProperties = {
   backgroundSize: '22px 22px',
 };
 
+/** A submit button's label: a spinner while busy, otherwise the text with an arrow. */
+function SubmitLabel({ busy, busyText, idleText }: Readonly<{ busy: boolean; busyText: string; idleText: string }>) {
+  return busy ? (
+    <>
+      <Loader2 className="h-4 w-4 animate-spin" />
+      {busyText}
+    </>
+  ) : (
+    <>
+      {idleText}
+      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+    </>
+  );
+}
+
+/** The social providers and the hosted login, under an "or continue with" divider. */
+function OtherSignInOptions({
+  providers,
+  hostedLogin,
+  pendingProvider,
+  disabled,
+  onProvider,
+  onHostedLogin,
+}: Readonly<{
+  providers: SsoProvider[];
+  hostedLogin: boolean;
+  pendingProvider: string | null;
+  disabled: boolean;
+  onProvider: (provider: SsoProvider) => void;
+  onHostedLogin: () => void;
+}>) {
+  return (
+    <>
+      <div className="mt-8 flex items-center gap-3">
+        <span className="h-px flex-1 bg-border" />
+        <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
+          or continue with
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      {providers.length > 0 && (
+        <div
+          className={`mt-4 grid gap-2 ${providers.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+        >
+          {providers.map((p) => (
+            <ProviderButton
+              key={p.provider}
+              provider={p}
+              busy={pendingProvider === p.provider}
+              disabled={disabled}
+              compact={providers.length > 2}
+              onSelect={onProvider}
+            />
+          ))}
+        </div>
+      )}
+
+      {hostedLogin && (
+        <Button
+          type="button"
+          variant="outline"
+          className={`w-full ${providers.length > 0 ? 'mt-2' : 'mt-4'}`}
+          disabled={disabled}
+          onClick={onHostedLogin}
+        >
+          <Blocks className="h-4 w-4 text-primary" />
+          <span>
+            {pendingProvider === HOSTED
+              ? 'Redirecting to SELISE Blocks…'
+              : 'SELISE Blocks'}
+          </span>
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function LoginPage() {
   const { isLoggedIn, isChecking } = useIsLoggedIn();
   const navigate = useNavigate();
@@ -168,7 +246,7 @@ export function LoginPage() {
   const providers = options?.ssoInfo ?? [];
   const hostedLogin = BLOCKS.hostedLogin && !!BLOCKS.oidcClientId;
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError(null);
@@ -199,7 +277,7 @@ export function LoginPage() {
   }
 
   /** Second leg: the code goes back with the mfa_id, and that is what sets the cookie. */
-  async function onVerifyMfa(event: FormEvent) {
+  async function onVerifyMfa(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!challenge) return;
     setBusy(true);
@@ -303,344 +381,287 @@ export function LoginPage() {
   }
 
   return (
-    <>
-      <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-        {/* ── Brand panel (large screens only) ───────────────────────────── */}
-        <aside className="relative hidden overflow-hidden bg-gradient-to-br from-primary via-primary to-secondary p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
-          <div aria-hidden className="absolute inset-0 opacity-[0.15]" style={DOT_GRID} />
-          <div
-            aria-hidden
-            className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-white/20 blur-3xl"
-          />
-          <div
-            aria-hidden
-            className="absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-black/20 blur-3xl"
-          />
+    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
+      {/* ── Brand panel (large screens only) ───────────────────────────── */}
+      <aside className="relative hidden overflow-hidden bg-gradient-to-br from-primary via-primary to-secondary p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
+        <div aria-hidden className="absolute inset-0 opacity-[0.15]" style={DOT_GRID} />
+        <div
+          aria-hidden
+          className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-white/20 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-black/20 blur-3xl"
+        />
 
-          <div className="relative flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-              <Blocks className="h-5 w-5" />
+        <div className="relative flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+            <Blocks className="h-5 w-5" />
+          </span>
+          <span className="text-lg font-semibold tracking-tight">Construct OS</span>
+        </div>
+
+        <div className="relative max-w-md space-y-10">
+          <div className="space-y-4">
+            <h1 className="text-4xl font-semibold leading-tight tracking-tight">
+              Your project console, built on SELISE Blocks.
+            </h1>
+            <p className="text-base leading-relaxed text-primary-foreground/80">
+              Everything your team ships — identity, data, storage — behind one sign-in.
+            </p>
+          </div>
+
+          <ul className="space-y-6">
+            {HIGHLIGHTS.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="flex gap-4">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/20">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div className="space-y-1">
+                  <p className="font-medium leading-none">{title}</p>
+                  <p className="text-sm leading-relaxed text-primary-foreground/75">{body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-primary-foreground/60">
+          © {new Date().getFullYear()} SELISE · Powered by Blocks
+        </p>
+      </aside>
+
+      {/* ── Sign-in panel ──────────────────────────────────────────────── */}
+      <main className="relative flex flex-col justify-center bg-background px-6 py-12 sm:px-12">
+        <div className="absolute right-4 top-4">
+          <ThemeToggle />
+        </div>
+
+        <div className="mx-auto w-full max-w-sm duration-500 animate-in fade-in slide-in-from-bottom-2">
+          {/* The brand panel is hidden below lg, so the mark repeats here. */}
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+              <Blocks className="h-5 w-5 text-primary" />
             </span>
             <span className="text-lg font-semibold tracking-tight">Construct OS</span>
           </div>
 
-          <div className="relative max-w-md space-y-10">
-            <div className="space-y-4">
-              <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-                Your project console, built on SELISE Blocks.
-              </h1>
-              <p className="text-base leading-relaxed text-primary-foreground/80">
-                Everything your team ships — identity, data, storage — behind one sign-in.
-              </p>
-            </div>
-
-            <ul className="space-y-6">
-              {HIGHLIGHTS.map(({ icon: Icon, title, body }) => (
-                <li key={title} className="flex gap-4">
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/20">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <div className="space-y-1">
-                    <p className="font-medium leading-none">{title}</p>
-                    <p className="text-sm leading-relaxed text-primary-foreground/75">{body}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <p className="relative text-xs text-primary-foreground/60">
-            © {new Date().getFullYear()} SELISE · Powered by Blocks
-          </p>
-        </aside>
-
-        {/* ── Sign-in panel ──────────────────────────────────────────────── */}
-        <main className="relative flex flex-col justify-center bg-background px-6 py-12 sm:px-12">
-          <div className="absolute right-4 top-4">
-            <ThemeToggle />
-          </div>
-
-          <div className="mx-auto w-full max-w-sm duration-500 animate-in fade-in slide-in-from-bottom-2">
-            {/* The brand panel is hidden below lg, so the mark repeats here. */}
-            <div className="mb-8 flex items-center gap-3 lg:hidden">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                <Blocks className="h-5 w-5 text-primary" />
-              </span>
-              <span className="text-lg font-semibold tracking-tight">Construct OS</span>
-            </div>
-
-            {challenge ? (
-              <>
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-semibold tracking-tight">Two-step verification</h2>
-                  <p className="text-sm text-muted-foreground">
-                    We sent a verification code to {mfaDestination(challenge)}. Enter it below to
-                    finish signing in
-                    {username ? (
-                      <>
-                        {' '}
-                        as <span className="font-medium text-foreground">{username}</span>
-                      </>
-                    ) : null}
-                    .
-                  </p>
-                </div>
-
-                <form className="mt-6 space-y-4" onSubmit={onVerifyMfa}>
-                  <div className="space-y-2">
-                    <label htmlFor="mfa-code" className="text-sm font-medium">
-                      Verification code
-                    </label>
-                    <Input
-                      id="mfa-code"
-                      // A code is digits today, but IAM decides its shape — `text` with a
-                      // numeric keypad hint keeps a future alphanumeric one typable.
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      // Lets the browser and password managers fill it the moment it lands.
-                      autoFocus
-                      required
-                      placeholder="123456"
-                      className="text-center text-lg tracking-[0.4em]"
-                      value={mfaCode}
-                      onChange={(e) => setMfaCode(e.target.value.replace(/\s/g, ''))}
-                      disabled={busy || resending}
-                    />
-                  </div>
-
-                  <Button
-                    type="submit"
-                    size="lg"
-                    className="group w-full"
-                    disabled={busy || resending || mfaCode.trim().length === 0}
-                  >
-                    {busy ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Verifying…
-                      </>
-                    ) : (
-                      <>
-                        Verify and sign in
-                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                      </>
-                    )}
-                  </Button>
-                </form>
-
-                {error != null && (
-                  <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
-
-                {notice != null && (
-                  <p className="mt-4 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400">
-                    <Check className="h-4 w-4 shrink-0" />
-                    {notice}
-                  </p>
-                )}
-
-                <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  <span>No code yet?</span>
-                  <button
-                    type="button"
-                    onClick={onResendMfa}
-                    disabled={busy || resending || resendCooldown.remaining > 0}
-                    className="inline-flex items-center gap-1.5 font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline disabled:pointer-events-none disabled:font-normal disabled:text-muted-foreground"
-                  >
-                    {resending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RotateCcw className="h-3.5 w-3.5" />
-                    )}
-                    {resending ? 'Sending…' : 'Send a new code'}
-                    {resendCooldown.label && ` (${resendCooldown.label})`}
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onCancelMfa}
-                  disabled={busy || resending}
-                  className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back to sign in
-                </button>
-              </>
-            ) : (
-              <>
+          {challenge ? (
+            <>
               <div className="space-y-2">
-                <h2 className="text-2xl font-semibold tracking-tight">Welcome back Chief</h2>
-                <p className="text-sm text-muted-foreground">Sign in to your Construct OS account.</p>
+                <h2 className="text-2xl font-semibold tracking-tight">Two-step verification</h2>
+                <p className="text-sm text-muted-foreground">
+                  We sent a verification code to {mfaDestination(challenge)}. Enter it below to
+                  finish signing in
+                  {username ? (
+                    <>
+                      {' '}
+                      as <span className="font-medium text-foreground">{username}</span>
+                    </>
+                  ) : null}
+                  .
+                </p>
               </div>
 
-              {sessionEnded && (
-                <p className="mt-6 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  Your session has ended. Sign in again to continue.
-                </p>
-              )}
-
-              {blocked && (
-                <div className="mt-6 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
-                  <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    Configuration needed
-                  </p>
-                  <ul className="list-inside list-disc space-y-1 text-muted-foreground">
-                    {issues.map((i) => (
-                      <li key={i}>{i}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+              <form className="mt-6 space-y-4" onSubmit={onVerifyMfa}>
                 <div className="space-y-2">
-                  <label htmlFor="username" className="text-sm font-medium">
-                    Email
+                  <label htmlFor="mfa-code" className="text-sm font-medium">
+                    Verification code
                   </label>
                   <Input
-                    id="username"
-                    type="email"
-                    autoComplete="username"
+                    id="mfa-code"
+                    // A code is digits today, but IAM decides its shape — `text` with a
+                    // numeric keypad hint keeps a future alphanumeric one typable.
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    // Lets the browser and password managers fill it the moment it lands.
+                    autoFocus
                     required
-                    placeholder="you@company.com"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    disabled={busy || blocked}
+                    placeholder="123456"
+                    className="text-center text-lg tracking-[0.4em]"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replaceAll(/\s/g, ''))}
+                    disabled={busy || resending}
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-baseline justify-between">
-                    <label htmlFor="password" className="text-sm font-medium">
-                      Password
-                    </label>
-                    <Link
-                      to="/forgot-password"
-                      className="text-xs text-muted-foreground transition-colors hover:text-primary"
-                    >
-                      Forgot password?
-                    </Link>
-                  </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={busy || blocked}
-                  />
-                </div>
-
-                {captcha.enabled && <Captcha {...captcha.props} className="flex justify-center" />}
 
                 <Button
                   type="submit"
                   size="lg"
                   className="group w-full"
-                  disabled={busy || blocked || !!pendingProvider || captcha.blocking}
+                  disabled={busy || resending || mfaCode.trim().length === 0}
                 >
-                  {busy ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Signing in…
-                    </>
-                  ) : (
-                    <>
-                      Sign in
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </>
-                  )}
+                  <SubmitLabel busy={busy} busyText="Verifying…" idleText="Verify and sign in" />
                 </Button>
               </form>
 
-              {(error ?? captcha.loadError) != null && (
+              {error != null && (
                 <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                  {error ?? captcha.loadError}
+                  {error}
                 </p>
               )}
 
-              {(providers.length > 0 || hostedLogin) && (
-                <>
-                  <div className="mt-8 flex items-center gap-3">
-                    <span className="h-px flex-1 bg-border" />
-                    <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                      or continue with
-                    </span>
-                    <span className="h-px flex-1 bg-border" />
-                  </div>
+              {notice != null && (
+                <p className="mt-4 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400">
+                  <Check className="h-4 w-4 shrink-0" />
+                  {notice}
+                </p>
+              )}
 
-                  {providers.length > 0 && (
-                    <div
-                      className={`mt-4 grid gap-2 ${providers.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
-                    >
-                      {providers.map((p) => (
-                        <ProviderButton
-                          key={p.provider}
-                          provider={p}
-                          busy={pendingProvider === p.provider}
-                          disabled={busy || blocked || !!pendingProvider}
-                          compact={providers.length > 2}
-                          onSelect={onProvider}
-                        />
-                      ))}
-                    </div>
+              <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                <span>No code yet?</span>
+                <button
+                  type="button"
+                  onClick={onResendMfa}
+                  disabled={busy || resending || resendCooldown.remaining > 0}
+                  className="inline-flex items-center gap-1.5 font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline disabled:pointer-events-none disabled:font-normal disabled:text-muted-foreground"
+                >
+                  {resending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5" />
                   )}
+                  {resending ? 'Sending…' : 'Send a new code'}
+                  {resendCooldown.label && ` (${resendCooldown.label})`}
+                </button>
+              </div>
 
-                  {hostedLogin && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={`w-full ${providers.length > 0 ? 'mt-2' : 'mt-4'}`}
-                      disabled={busy || blocked || !!pendingProvider}
-                      onClick={onHostedLogin}
-                    >
-                      <Blocks className="h-4 w-4 text-primary" />
-                      <span>
-                        {pendingProvider === HOSTED
-                          ? 'Redirecting to SELISE Blocks…'
-                          : 'SELISE Blocks'}
-                      </span>
-                    </Button>
-                  )}
-                </>
-              )}
+              <button
+                type="button"
+                onClick={onCancelMfa}
+                disabled={busy || resending}
+                className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to sign in
+              </button>
+            </>
+          ) : (
+            <>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-semibold tracking-tight">Welcome back Chief</h2>
+              <p className="text-sm text-muted-foreground">Sign in to your Construct OS account.</p>
+            </div>
 
-              {loadingOptions && (
-                <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading sign-in options…
-                </p>
-              )}
-
-              {canSignUp && (
-                <p className="mt-8 text-center text-sm text-muted-foreground">
-                  New here?{' '}
-                  <Link
-                    to="/signup"
-                    className="font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-                  >
-                    Create an account
-                  </Link>
-                </p>
-              )}
-              </>
+            {sessionEnded && (
+              <p className="mt-6 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Your session has ended. Sign in again to continue.
+              </p>
             )}
 
-            <p className="mt-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-              <Lock className="h-3.5 w-3.5" />
-              Secured by SELISE Blocks
-            </p>
-          </div>
-        </main>
-      </div>
-    </>
+            {blocked && (
+              <div className="mt-6 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+                <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Configuration needed
+                </p>
+                <ul className="list-inside list-disc space-y-1 text-muted-foreground">
+                  {issues.map((i) => (
+                    <li key={i}>{i}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+              <div className="space-y-2">
+                <label htmlFor="username" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="username"
+                  type="email"
+                  autoComplete="username"
+                  required
+                  placeholder="you@company.com"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={busy || blocked}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <label htmlFor="password" className="text-sm font-medium">
+                    Password
+                  </label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground transition-colors hover:text-primary"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={busy || blocked}
+                />
+              </div>
+
+              {captcha.enabled && <Captcha {...captcha.props} className="flex justify-center" />}
+
+              <Button
+                type="submit"
+                size="lg"
+                className="group w-full"
+                disabled={busy || blocked || !!pendingProvider || captcha.blocking}
+              >
+                <SubmitLabel busy={busy} busyText="Signing in…" idleText="Sign in" />
+              </Button>
+            </form>
+
+            {(error ?? captcha.loadError) != null && (
+              <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {error ?? captcha.loadError}
+              </p>
+            )}
+
+            {(providers.length > 0 || hostedLogin) && (
+              <OtherSignInOptions
+                providers={providers}
+                hostedLogin={hostedLogin}
+                pendingProvider={pendingProvider}
+                disabled={busy || blocked || !!pendingProvider}
+                onProvider={onProvider}
+                onHostedLogin={onHostedLogin}
+              />
+            )}
+
+            {loadingOptions && (
+              <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading sign-in options…
+              </p>
+            )}
+
+            {canSignUp && (
+              <p className="mt-8 text-center text-sm text-muted-foreground">
+                New here?{' '}
+                <Link
+                  to="/signup"
+                  className="font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                >
+                  Create an account
+                </Link>
+              </p>
+            )}
+            </>
+          )}
+
+          <p className="mt-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <Lock className="h-3.5 w-3.5" />
+            Secured by SELISE Blocks
+          </p>
+        </div>
+      </main>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import { blocksFetch } from '@/lib/blocks-client';
 import { LOCALIZATION_BASE } from '@/lib/env';
+import { toText } from '@/lib/utils';
 
 /**
  * Runtime localization — reading translations, never authoring them (that is the
@@ -53,10 +54,9 @@ export type Dictionary = Record<string, string>;
 const KEY_MISSING = '[ KEY MISSING ]';
 
 /** Language records are not consistent about which field carries the code. */
-export const languageCode = (l: Language): string =>
-  String(l.languageCode ?? l.code ?? l.culture ?? l.name ?? '');
+export const languageCode = (l: Language): string => toText(l.languageCode ?? l.code ?? l.culture ?? l.name);
 export const languageLabel = (l: Language): string =>
-  String(l.languageName ?? l.displayName ?? l.name ?? languageCode(l));
+  toText(l.languageName ?? l.displayName ?? l.name ?? languageCode(l));
 export const moduleName = (m: LocalizationModule): string => String(m.moduleName ?? m.name ?? '');
 
 /** Lists may come bare or inside a `data` envelope depending on the build. */
@@ -72,12 +72,11 @@ function unwrapList<T>(value: unknown): T[] {
  * "[object Object]", which is worse than the fallback.
  */
 function toDictionary(value: unknown): Dictionary {
-  const record =
-    value && typeof value === 'object'
-      ? ((value as { data?: unknown }).data && typeof (value as { data?: unknown }).data === 'object'
-          ? (value as { data: Record<string, unknown> }).data
-          : (value as Record<string, unknown>))
-      : {};
+  let record: Record<string, unknown> = {};
+  if (value && typeof value === 'object') {
+    const data = (value as { data?: unknown }).data;
+    record = data && typeof data === 'object' ? (data as Record<string, unknown>) : (value as Record<string, unknown>);
+  }
   const out: Dictionary = {};
   // An untranslated key is published as the literal "[ KEY MISSING ]" — treat it as
   // absent so the app's fallback shows instead of the marker.

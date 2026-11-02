@@ -24,7 +24,7 @@ const TABS: { value: Tab; label: React.ReactNode }[] = [
   { value: 'history', label: <TabLabel icon={Clock}>History</TabLabel> },
 ];
 
-function TabLabel({ icon: Icon, children }: { icon: typeof Shield; children: React.ReactNode }) {
+function TabLabel({ icon: Icon, children }: Readonly<{ icon: typeof Shield; children: React.ReactNode }>) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <Icon className="h-3.5 w-3.5" />
@@ -79,7 +79,7 @@ export function ProfilePage() {
   );
 }
 
-function DetailsCard({ me }: { me: Me }) {
+function DetailsCard({ me }: Readonly<{ me: Me }>) {
   const update = useUpdateMe();
 
   const [firstName, setFirstName] = useState('');

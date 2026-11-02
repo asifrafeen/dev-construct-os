@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { Check, Loader2, Mail, RotateCcw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,7 +36,7 @@ const METHOD_NAMES: Record<number, string> = {
   [MFA_TYPE.whatsApp]: 'WhatsApp',
 };
 
-export function MfaCard({ me }: { me: Me }) {
+export function MfaCard({ me }: Readonly<{ me: Me }>) {
   const { policy } = useMfaPolicy();
 
   const start = useStartEmailMfa();
@@ -93,7 +93,7 @@ export function MfaCard({ me }: { me: Me }) {
     }
   }
 
-  async function onConfirm(event: FormEvent) {
+  async function onConfirm(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!mfaId) return;
     setDialogError(null);
@@ -151,68 +151,17 @@ export function MfaCard({ me }: { me: Me }) {
             it before anyone can enrol.
           </p>
         ) : (
-          <div className="rounded-md border">
-            <div className="flex items-start justify-between gap-4 p-4">
-              <div className="space-y-1">
-                <p className="flex items-center gap-2 text-sm font-medium">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  Email
-                  {onEmail && (
-                    <Badge tone="success">{me.isMfaVerified ? 'Active' : 'Pending'}</Badge>
-                  )}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  A {EMAIL_CODE_LENGTH}-digit code is sent to{' '}
-                  <span className="font-medium text-foreground">{me.email}</span> each time you
-                  sign in.
-                </p>
-              </div>
-
-              {onEmail ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmingDisable(true)}
-                  disabled={disable.isPending}
-                >
-                  Turn off
-                </Button>
-              ) : (
-                !emailNotOffered && (
-                  <Button variant="outline" size="sm" onClick={onEnable} disabled={start.isPending}>
-                    {start.isPending ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Sending…
-                      </>
-                    ) : (
-                      'Enable'
-                    )}
-                  </Button>
-                )
-              )}
-            </div>
-
-            {emailNotOffered && !onEmail && (
-              <p className="border-t p-4 text-sm text-muted-foreground">
-                This project does not offer email codes. Allowed:{' '}
-                {(policy?.allowedMethods ?? [])
-                  .map((m) => METHOD_NAMES[m] ?? `Type ${m}`)
-                  .join(', ') || 'none'}
-                .
-              </p>
-            )}
-
-            {onOtherMethod && (
-              <p className="border-t p-4 text-sm text-muted-foreground">
-                This account already uses{' '}
-                <span className="font-medium text-foreground">
-                  {METHOD_NAMES[me.userMfaType] ?? `type ${me.userMfaType}`}
-                </span>
-                . Enabling email here replaces it.
-              </p>
-            )}
-          </div>
+          <EmailMethodPanel
+            me={me}
+            onEmail={onEmail}
+            onOtherMethod={onOtherMethod}
+            emailNotOffered={emailNotOffered}
+            allowedMethods={policy?.allowedMethods}
+            enabling={start.isPending}
+            disabling={disable.isPending}
+            onEnable={onEnable}
+            onTurnOff={() => setConfirmingDisable(true)}
+          />
         )}
 
         {notice && (
@@ -276,7 +225,7 @@ export function MfaCard({ me }: { me: Me }) {
               value={code}
               // Digits only: the code is numeric, and pasting from a mail client
               // easily drags a space along with it.
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => setCode(e.target.value.replaceAll(/\D/g, ''))}
               disabled={confirm.isPending}
             />
           </div>
@@ -331,5 +280,88 @@ export function MfaCard({ me }: { me: Me }) {
         </p>
       </Modal>
     </Card>
+  );
+}
+
+/** The Email method row: its state, the enable / turn-off button, and why it may be unavailable. */
+function EmailMethodPanel({
+  me,
+  onEmail,
+  onOtherMethod,
+  emailNotOffered,
+  allowedMethods,
+  enabling,
+  disabling,
+  onEnable,
+  onTurnOff,
+}: Readonly<{
+  me: Me;
+  onEmail: boolean;
+  onOtherMethod: boolean;
+  emailNotOffered: boolean;
+  allowedMethods: number[] | undefined;
+  enabling: boolean;
+  disabling: boolean;
+  onEnable: () => void;
+  onTurnOff: () => void;
+}>) {
+  return (
+    <div className="rounded-md border">
+      <div className="flex items-start justify-between gap-4 p-4">
+        <div className="space-y-1">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Mail className="h-4 w-4 text-muted-foreground" />
+            Email
+            {onEmail && (
+              <Badge tone="success">{me.isMfaVerified ? 'Active' : 'Pending'}</Badge>
+            )}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            A {EMAIL_CODE_LENGTH}-digit code is sent to{' '}
+            <span className="font-medium text-foreground">{me.email}</span> each time you
+            sign in.
+          </p>
+        </div>
+
+        {onEmail ? (
+          <Button variant="outline" size="sm" onClick={onTurnOff} disabled={disabling}>
+            Turn off
+          </Button>
+        ) : (
+          !emailNotOffered && (
+            <Button variant="outline" size="sm" onClick={onEnable} disabled={enabling}>
+              {enabling ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                'Enable'
+              )}
+            </Button>
+          )
+        )}
+      </div>
+
+      {emailNotOffered && !onEmail && (
+        <p className="border-t p-4 text-sm text-muted-foreground">
+          This project does not offer email codes. Allowed:{' '}
+          {(allowedMethods ?? [])
+            .map((m) => METHOD_NAMES[m] ?? `Type ${m}`)
+            .join(', ') || 'none'}
+          .
+        </p>
+      )}
+
+      {onOtherMethod && (
+        <p className="border-t p-4 text-sm text-muted-foreground">
+          This account already uses{' '}
+          <span className="font-medium text-foreground">
+            {METHOD_NAMES[me.userMfaType] ?? `type ${me.userMfaType}`}
+          </span>
+          {'. Enabling email here replaces it.'}
+        </p>
+      )}
+    </div>
   );
 }

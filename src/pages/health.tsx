@@ -55,6 +55,21 @@ interface Outcome {
   detail?: string;
 }
 
+function blocksFailure(e: BlocksError): Omit<Outcome, 'ms'> {
+  if (e.status === 403) return { verdict: 'forbidden', status: e.status, detail: 'Reachable, but your role lacks the permission' };
+  if (e.status === 429) return { verdict: 'forbidden', status: e.status, detail: 'Rate/quota limited' };
+  // A 400 means the route exists and the service parsed the request — reachable.
+  if (e.status === 400 || e.status === 405) return { verdict: 'up', status: e.status, detail: 'Reachable (request rejected)' };
+  if (e.status === 406) return { verdict: 'down', status: e.status, detail: 'Origin not allowed for this tenant' };
+  return { verdict: 'down', status: e.status, detail: typeof e.body === 'string' ? e.body.slice(0, 160) : undefined };
+}
+
+function failure(e: unknown): Omit<Outcome, 'ms'> {
+  if (e instanceof UnauthorizedError) return { verdict: 'forbidden', status: 401, detail: 'Not authenticated for this service' };
+  if (e instanceof BlocksError) return blocksFailure(e);
+  return { verdict: 'down', status: null, detail: e instanceof Error ? `${e.message} (network or CORS)` : String(e) };
+}
+
 async function run(p: Probe): Promise<Outcome> {
   const t0 = performance.now();
   const ms = () => Math.round(performance.now() - t0);
@@ -62,15 +77,15 @@ async function run(p: Probe): Promise<Outcome> {
     await blocksFetch<unknown>(p.path, { method: p.method, body: p.body, noRetry: p.anonymous });
     return { verdict: 'up', status: 200, ms: ms() };
   } catch (e) {
-    if (e instanceof UnauthorizedError) return { verdict: 'forbidden', status: 401, ms: ms(), detail: 'Not authenticated for this service' };
-    if (e instanceof BlocksError) {
-      if (e.status === 403 || e.status === 429) return { verdict: 'forbidden', status: e.status, ms: ms(), detail: e.status === 403 ? 'Reachable, but your role lacks the permission' : 'Rate/quota limited' };
-      // A 400 means the route exists and the service parsed the request — reachable.
-      if (e.status === 400 || e.status === 405 || e.status === 406) return { verdict: e.status === 406 ? 'down' : 'up', status: e.status, ms: ms(), detail: e.status === 406 ? 'Origin not allowed for this tenant' : 'Reachable (request rejected)' };
-      return { verdict: 'down', status: e.status, ms: ms(), detail: typeof e.body === 'string' ? e.body.slice(0, 160) : undefined };
-    }
-    return { verdict: 'down', status: null, ms: ms(), detail: e instanceof Error ? `${e.message} (network or CORS)` : String(e) };
+    return { ...failure(e), ms: ms() };
   }
+}
+
+function StatusIcon({ fetching, verdict }: Readonly<{ fetching: boolean; verdict?: Verdict }>) {
+  if (fetching) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+  if (verdict === 'up') return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
+  if (verdict === 'forbidden') return <CircleAlert className="h-4 w-4 text-amber-500" />;
+  return <XCircle className="h-4 w-4 text-destructive" />;
 }
 
 export function HealthPage() {
@@ -85,6 +100,10 @@ export function HealthPage() {
   });
   const fetching = results.some((r) => r.isFetching);
   const down = results.filter((r) => r.data?.verdict === 'down').length;
+  let summary: string;
+  if (fetching) summary = 'Probing…';
+  else if (down) summary = `${down} probe(s) failing.`;
+  else summary = 'All probed services answered.';
 
   return (
     <div className="space-y-6">
@@ -98,7 +117,7 @@ export function HealthPage() {
         }
       />
       <p className="text-sm text-muted-foreground">
-        {fetching ? 'Probing…' : down ? `${down} probe(s) failing.` : 'All probed services answered.'} API: <code>{API || '(unset)'}</code>
+        {summary} API: <code>{API || '(unset)'}</code>
       </p>
       <Card>
         <CardContent className="p-0">
@@ -109,15 +128,7 @@ export function HealthPage() {
               return (
                 <li key={p.path} className="flex items-center gap-3 px-4 py-2.5">
                   <span className="w-5">
-                    {r.isFetching ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    ) : o?.verdict === 'up' ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    ) : o?.verdict === 'forbidden' ? (
-                      <CircleAlert className="h-4 w-4 text-amber-500" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-destructive" />
-                    )}
+                    <StatusIcon fetching={r.isFetching} verdict={o?.verdict} />
                   </span>
                   <Badge tone="muted" className="w-24 justify-center">
                     {p.service}

@@ -65,12 +65,15 @@ export async function blocksFetch<T>(url: string, init: BlocksRequest = {}): Pro
   if (body !== undefined && !isRaw) finalHeaders['Content-Type'] = 'application/json';
   Object.assign(finalHeaders, headers as Record<string, string> | undefined);
 
+  let requestBody: BodyInit | undefined;
+  if (body !== undefined) requestBody = isRaw ? (body as BodyInit) : JSON.stringify(body);
+
   const send = (): Promise<Response> =>
     trackedFetch(url, {
       ...rest,
       credentials: 'include', // the SSO session cookie set by /idp/callback
       headers: finalHeaders,
-      body: body === undefined ? undefined : isRaw ? (body as BodyInit) : JSON.stringify(body),
+      body: requestBody,
     });
 
   let res = await send();

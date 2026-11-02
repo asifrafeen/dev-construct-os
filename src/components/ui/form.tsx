@@ -30,13 +30,13 @@ export function Checkbox({
   onChange,
   disabled,
   hint,
-}: {
+}: Readonly<{
   label: React.ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
   hint?: React.ReactNode;
-}) {
+}>) {
   return (
     <label className="flex cursor-pointer items-start gap-2 text-sm">
       <input

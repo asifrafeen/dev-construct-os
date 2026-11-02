@@ -1,5 +1,6 @@
 import { BlocksError, blocksFetch } from '@/lib/blocks-client';
 import { IAM_BASE } from '@/lib/env';
+import { toText } from '@/lib/utils';
 import { authErrorMessage } from './errors';
 
 /**
@@ -187,7 +188,7 @@ export function mfaErrorMessage(error: unknown): string {
       if (help) return help;
     }
     const first = Object.values(errors as Record<string, unknown>).find(Boolean);
-    if (first) return String(first);
+    if (first) return toText(first);
   }
 
   const named = typeof body?.error === 'string' ? MFA_ERROR_HELP[body.error] : undefined;

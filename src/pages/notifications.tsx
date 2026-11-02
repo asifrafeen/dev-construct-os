@@ -20,7 +20,7 @@ import {
   useNotify,
 } from '@/features/notifications/hooks';
 import { BlocksError } from '@/lib/blocks-client';
-import { useRealtimeStatus } from '@/features/notifications/realtime';
+import { type RealtimeState, useRealtimeStatus } from '@/features/notifications/realtime';
 import {
   deviceName,
   disablePush,
@@ -30,13 +30,21 @@ import {
   type PushState,
 } from '@/features/notifications/push';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Select, Textarea, parseJsonInput, splitList } from '@/components/ui/form';
 import { CopyButton, DetailList, JsonView, PageHeader, Pager } from '@/components/ui/layout';
 import { cn, formatDate } from '@/lib/utils';
 
 const PAGE_SIZE = 10;
+
+const REALTIME_TONE: Record<RealtimeState, 'success' | 'muted' | 'danger'> = {
+  connected: 'success',
+  off: 'muted',
+  connecting: 'danger',
+  reconnecting: 'danger',
+  failed: 'danger',
+};
 
 export function NotificationsPage() {
   const realtime = useRealtimeStatus();
@@ -47,9 +55,7 @@ export function NotificationsPage() {
         description={
           <>
             Send real-time/offline notifications and work the signed-in user's inbox. Live connection:{' '}
-            <Badge tone={realtime.state === 'connected' ? 'success' : realtime.state === 'off' ? 'muted' : 'danger'}>
-              {realtime.state}
-            </Badge>
+            <Badge tone={REALTIME_TONE[realtime.state]}>{realtime.state}</Badge>
             {realtime.detail && <span className="ml-1 text-xs">{realtime.detail}</span>}
           </>
         }
@@ -113,13 +119,11 @@ function InboxCard() {
         />
         {markAll.isError && <ErrorNote error={markAll.error} />}
         {markRead.isError && <ErrorNote error={markRead.error} />}
-        {inbox.isPending ? (
-          <Spinner />
-        ) : inbox.isError ? (
-          <ErrorNote error={inbox.error} />
-        ) : items.length === 0 ? (
-          <EmptyState title="No notifications" description="Send one to yourself from the form alongside." />
-        ) : (
+        <QueryState
+          query={inbox}
+          empty={items.length === 0}
+          emptyState={<EmptyState title="No notifications" description="Send one to yourself from the form alongside." />}
+        >
           <ul className="divide-y">
             {items.map((n) => {
               const id = notificationId(n);
@@ -144,7 +148,7 @@ function InboxCard() {
               );
             })}
           </ul>
-        )}
+        </QueryState>
         <Pager zeroBased page={page} pageCount={Math.ceil(total / PAGE_SIZE)} total={total} onChange={setPage} />
       </CardContent>
     </Card>
@@ -166,14 +170,15 @@ function audienceNote(a: NotificationAudience): { text: string; warn: boolean } 
     ]
       .filter(Boolean)
       .join(', ');
+    const plusRules = rules ? `, plus ${rules}` : '';
     return a.alsoNamedUsers
-      ? { text: `Targeted: the target below (Owner)${rules ? `, plus ${rules}` : ''}.`, warn: false }
+      ? { text: `Targeted: the target below (Owner)${plusRules}.`, warn: false }
       : { text: `Targeted without Owner: only ${rules || 'its own rules'} get it — the target below may not.`, warn: true };
   }
   return { text: 'Affected users only: the target below.', warn: false };
 }
 
-function ConfigDetails({ config }: { config: NotificationConfig }) {
+function ConfigDetails({ config }: Readonly<{ config: NotificationConfig }>) {
   const audience = audienceNote(effectiveAudience(config));
   const channels = [
     config.liveEnabled === false ? '' : 'In-app',
@@ -198,7 +203,12 @@ function ConfigDetails({ config }: { config: NotificationConfig }) {
               'None'
             ),
           ],
-          ['Audience', <span className={cn(audience.warn && 'text-amber-600 dark:text-amber-400')}>{audience.text}</span>],
+          [
+            'Audience',
+            <span key="audience" className={cn(audience.warn && 'text-amber-600 dark:text-amber-400')}>
+              {audience.text}
+            </span>,
+          ],
           ['Push text', push?.titleKey ? <code className="text-xs">{`${push.titleKey} / ${push.bodyKey}`}</code> : null],
           ['Hub method', config.notifyMethod ? <code className="text-xs">{config.notifyMethod}</code> : null],
         ]}
@@ -210,7 +220,7 @@ function ConfigDetails({ config }: { config: NotificationConfig }) {
   );
 }
 
-function ConfigsError({ error }: { error: unknown }) {
+function ConfigsError({ error }: Readonly<{ error: unknown }>) {
   if (error instanceof BlocksError && error.status === 403) {
     return (
       <ErrorNote error="Your role cannot list notification configurations. Give it the permission blocks-os::notification::gets (Roles page), then reload." />
@@ -408,7 +418,7 @@ function PushCard() {
               ['Device', deviceName()],
               [
                 'Token',
-                <span className="flex items-center gap-1">
+                <span key="token" className="flex items-center gap-1">
                   <code className="truncate text-[11px]">{token.slice(0, 24)}…</code>
                   <CopyButton text={token} />
                 </span>,

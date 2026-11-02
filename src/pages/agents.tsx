@@ -3,17 +3,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Mic, Send, Square, Trash2, User } from 'lucide-react';
 import { agentId, agents, type Agent, type StreamFrame } from '@/features/agents/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Textarea } from '@/components/ui/form';
 import { JsonView, PageHeader } from '@/components/ui/layout';
 import { cn, formatDate } from '@/lib/utils';
 
 interface Turn {
+  id: number;
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
 }
+
+let nextTurnId = 1;
 
 export function AgentsPage() {
   const [agent, setAgent] = useState<Agent | null>(null);
@@ -59,7 +62,7 @@ export function AgentsPage() {
   );
 }
 
-function AgentList({ selected, onSelect }: { selected: Agent | null; onSelect: (a: Agent) => void }) {
+function AgentList({ selected, onSelect }: Readonly<{ selected: Agent | null; onSelect: (a: Agent) => void }>) {
   const [search, setSearch] = useState('');
   const list = useQuery({ queryKey: ['agents', 'list', search], queryFn: () => agents.list({ search: search.trim() || undefined }), retry: false });
   const rows = list.data?.agents ?? [];
@@ -70,13 +73,11 @@ function AgentList({ selected, onSelect }: { selected: Agent | null; onSelect: (
         <Input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </CardHeader>
       <CardContent className="max-h-[60vh] overflow-y-auto">
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : !rows.length ? (
-          <EmptyState title="No agents" description="Create one in Blocks OS → Agents." />
-        ) : (
+        <QueryState
+          query={list}
+          empty={rows.length === 0}
+          emptyState={<EmptyState title="No agents" description="Create one in Blocks OS → Agents." />}
+        >
           <ul className="space-y-0.5">
             {rows.map((a) => (
               <li key={agentId(a)}>
@@ -94,7 +95,7 @@ function AgentList({ selected, onSelect }: { selected: Agent | null; onSelect: (
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
     </Card>
   );
@@ -106,13 +107,13 @@ function ChatPanel({
   setConversationId,
   turns,
   setTurns,
-}: {
+}: Readonly<{
   agent: Agent | null;
   conversationId: string | null;
   setConversationId: (id: string | null) => void;
   turns: Turn[];
   setTurns: React.Dispatch<React.SetStateAction<Turn[]>>;
-}) {
+}>) {
   const qc = useQueryClient();
   const [input, setInput] = useState('');
   const [temporary, setTemporary] = useState(false);
@@ -128,11 +129,14 @@ function ChatPanel({
     setInput('');
     setError(null);
     setFrames([]);
-    setTurns((t) => [...t, { role: 'user', content }, { role: 'assistant', content: '' }]);
+    const userTurn: Turn = { id: nextTurnId++, role: 'user', content };
+    const assistantTurn: Turn = { id: nextTurnId++, role: 'assistant', content: '' };
+    setTurns((t) => [...t, userTurn, assistantTurn]);
     const appendLast = (key: 'content' | 'thinking', delta: string) =>
       setTurns((t) => {
         const copy = [...t];
-        const last = copy[copy.length - 1];
+        const last = copy.at(-1);
+        if (!last) return t;
         copy[copy.length - 1] = { ...last, [key]: (last[key] ?? '') + delta };
         return copy;
       });
@@ -205,7 +209,7 @@ function ChatPanel({
             <p className="text-sm text-muted-foreground">No messages yet.</p>
           ) : (
             turns.map((t, i) => (
-              <div key={i} className={cn('flex gap-2', t.role === 'user' && 'flex-row-reverse')}>
+              <div key={t.id} className={cn('flex gap-2', t.role === 'user' && 'flex-row-reverse')}>
                 <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10">
                   {t.role === 'user' ? <User className="h-3.5 w-3.5 text-primary" /> : <Bot className="h-3.5 w-3.5 text-primary" />}
                 </div>
@@ -261,7 +265,7 @@ function ChatPanel({
   );
 }
 
-function History({ onOpen, activeId }: { onOpen: (id: string, turns: Turn[]) => void; activeId: string | null }) {
+function History({ onOpen, activeId }: Readonly<{ onOpen: (id: string, turns: Turn[]) => void; activeId: string | null }>) {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ['agents', 'conversations'], queryFn: () => agents.conversations(), retry: false });
   const open = useMutation({
@@ -269,6 +273,7 @@ function History({ onOpen, activeId }: { onOpen: (id: string, turns: Turn[]) => 
       const res = await agents.messages(id);
       const items = (res.data ?? (res as { messages?: unknown[] }).messages ?? []) as { content?: string; senderType?: string; role?: string; type?: string }[];
       return items.map<Turn>((m) => ({
+        id: nextTurnId++,
         role: /user|human/i.test(String(m.senderType ?? m.role ?? m.type ?? '')) ? 'user' : 'assistant',
         content: String(m.content ?? ''),
       }));
@@ -291,14 +296,9 @@ function History({ onOpen, activeId }: { onOpen: (id: string, turns: Turn[]) => 
         <CardTitle className="text-base">My conversations</CardTitle>
       </CardHeader>
       <CardContent className="max-h-[60vh] overflow-y-auto">
-        {[open, del].map((m, i) => m.isError && <ErrorNote key={i} error={m.error} />)}
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : !rows.length ? (
-          <EmptyState title="None yet" />
-        ) : (
+        {open.isError && <ErrorNote error={open.error} />}
+        {del.isError && <ErrorNote error={del.error} />}
+        <QueryState query={list} empty={rows.length === 0} emptyState={<EmptyState title="None yet" />}>
           <ul className="space-y-0.5">
             {rows.map((c) => {
               const id = String(c.id ?? c.conversationId ?? '');
@@ -318,7 +318,7 @@ function History({ onOpen, activeId }: { onOpen: (id: string, turns: Turn[]) => 
               );
             })}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
     </Card>
   );

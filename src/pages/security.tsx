@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut, MonitorSmartphone, QrCode, ShieldCheck } from 'lucide-react';
 import { useMe, ME_KEY } from '@/features/users/hooks';
@@ -8,7 +8,7 @@ import { ChangePasswordCard } from '@/features/security/change-password-card';
 import { security, sessionStatusLabel, type SessionRow } from '@/features/security/api';
 import { useAuthStore } from '@/state/auth-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Checkbox } from '@/components/ui/form';
@@ -56,7 +56,11 @@ export function SecurityPage() {
  * Authenticator-app enrolment: setup returns a QR image and the raw secret, and the first
  * code from the app is what switches TOTP on.
  */
-function TotpCard({ enrolled, mfaEnabled, activeType }: { enrolled: boolean; mfaEnabled: boolean; activeType: number }) {
+function TotpCard({
+  enrolled,
+  mfaEnabled,
+  activeType,
+}: Readonly<{ enrolled: boolean; mfaEnabled: boolean; activeType: number }>) {
   const qc = useQueryClient();
   const [code, setCode] = useState('');
   const setup = useMutation({ mutationFn: security.totpSetup });
@@ -72,6 +76,7 @@ function TotpCard({ enrolled, mfaEnabled, activeType }: { enrolled: boolean; mfa
     mutationFn: (t: 1 | 2) => security.setMethod(t),
     onSuccess: () => qc.invalidateQueries({ queryKey: ME_KEY }),
   });
+  const enrolLabel = enrolled ? 'Re-enrol authenticator' : 'Set up authenticator';
 
   return (
     <Card>
@@ -88,11 +93,7 @@ function TotpCard({ enrolled, mfaEnabled, activeType }: { enrolled: boolean; mfa
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {!setup.data ? (
-          <Button variant="outline" disabled={setup.isPending} onClick={() => setup.mutate()}>
-            {setup.isPending ? 'Starting…' : enrolled ? 'Re-enrol authenticator' : 'Set up authenticator'}
-          </Button>
-        ) : (
+        {setup.data ? (
           <div className="space-y-3">
             {setup.data.qrImageUrl && (
               <img src={setup.data.qrImageUrl} alt="TOTP QR code" className="h-44 w-44 rounded-md border bg-white p-2" />
@@ -113,6 +114,10 @@ function TotpCard({ enrolled, mfaEnabled, activeType }: { enrolled: boolean; mfa
               <Button disabled={code.trim().length < 6 || verify.isPending}>Verify</Button>
             </form>
           </div>
+        ) : (
+          <Button variant="outline" disabled={setup.isPending} onClick={() => setup.mutate()}>
+            {setup.isPending ? 'Starting…' : enrolLabel}
+          </Button>
         )}
         {setup.isError && <ErrorNote error={mfaErrorMessage(setup.error)} />}
         {verify.isError && <ErrorNote error={mfaErrorMessage(verify.error)} />}
@@ -149,6 +154,21 @@ function SessionsCard() {
       void summary.refetch();
     },
   });
+  const sessionRows = sessions.data ?? [];
+
+  let summaryNote: ReactNode = null;
+  if (summary.isError) {
+    summaryNote = <ErrorNote error={summary.error} />;
+  } else if (summary.data) {
+    summaryNote = (
+      <div className="flex flex-wrap gap-2 text-xs">
+        <Badge tone="success">{summary.data.activeSessions ?? 0} active</Badge>
+        <Badge tone="muted">{summary.data.expiredSessions ?? 0} expired</Badge>
+        <Badge tone="muted">{summary.data.revokedSessions ?? 0} revoked</Badge>
+        <span className="text-muted-foreground">last login {formatDate(summary.data.lastLoginAt)}</span>
+      </div>
+    );
+  }
 
   return (
     <Card>
@@ -159,26 +179,11 @@ function SessionsCard() {
         <CardDescription>Needs blocks-iam::iam::security-audit (revoke needs mutate-security-audit).</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {summary.isError ? (
-          <ErrorNote error={summary.error} />
-        ) : summary.data ? (
-          <div className="flex flex-wrap gap-2 text-xs">
-            <Badge tone="success">{summary.data.activeSessions ?? 0} active</Badge>
-            <Badge tone="muted">{summary.data.expiredSessions ?? 0} expired</Badge>
-            <Badge tone="muted">{summary.data.revokedSessions ?? 0} revoked</Badge>
-            <span className="text-muted-foreground">last login {formatDate(summary.data.lastLoginAt)}</span>
-          </div>
-        ) : null}
+        {summaryNote}
         {revoke.isError && <ErrorNote error={revoke.error} />}
-        {sessions.isPending ? (
-          <Spinner />
-        ) : sessions.isError ? (
-          <ErrorNote error={sessions.error} />
-        ) : !sessions.data?.length ? (
-          <EmptyState title="No sessions" />
-        ) : (
+        <QueryState query={sessions} empty={sessionRows.length === 0} emptyState={<EmptyState title="No sessions" />}>
           <ul className="divide-y text-sm">
-            {sessions.data.map((s) => (
+            {sessionRows.map((s) => (
               <li key={s.sessionId} className="flex items-center justify-between gap-2 py-2">
                 <button className="min-w-0 text-left" onClick={() => setDetail(s)}>
                   <p className="truncate font-medium">
@@ -197,14 +202,14 @@ function SessionsCard() {
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
       {detail && <SessionDetailModal session={detail} onClose={() => setDetail(null)} />}
     </Card>
   );
 }
 
-function SessionDetailModal({ session, onClose }: { session: SessionRow; onClose: () => void }) {
+function SessionDetailModal({ session, onClose }: Readonly<{ session: SessionRow; onClose: () => void }>) {
   const detail = useQuery({ queryKey: ['iam', 'security', 'session', session.sessionId], queryFn: () => security.session(session.sessionId) });
   return (
     <Modal open onClose={onClose} title="Session" description={<code>{session.sessionId}</code>} className="max-w-2xl">
@@ -216,7 +221,9 @@ function SessionDetailModal({ session, onClose }: { session: SessionRow; onClose
           ['Apps', (session.clientIds ?? []).join(', ') || '—'],
         ]}
       />
-      {detail.isPending ? <Spinner /> : detail.isError ? <ErrorNote error={detail.error} /> : <JsonView value={detail.data} />}
+      <QueryState query={detail}>
+        <JsonView value={detail.data} />
+      </QueryState>
     </Modal>
   );
 }
@@ -279,7 +286,7 @@ function ClaimsCard() {
 
 const CATEGORIES = ['Account', 'Audit', 'Auth', 'Resource'];
 
-export function ActivityCard({ userId, title = 'My activity' }: { userId?: string; title?: string }) {
+export function ActivityCard({ userId, title = 'My activity' }: Readonly<{ userId?: string; title?: string }>) {
   const [page, setPage] = useState(0);
   const [category, setCategory] = useState('');
   const [search, setSearch] = useState('');
@@ -297,6 +304,7 @@ export function ActivityCard({ userId, title = 'My activity' }: { userId?: strin
     retry: false,
   });
   const total = activity.data?.totalCount ?? 0;
+  const items = activity.data?.items ?? [];
 
   return (
     <Card>
@@ -316,13 +324,7 @@ export function ActivityCard({ userId, title = 'My activity' }: { userId?: strin
         </div>
       </CardHeader>
       <CardContent>
-        {activity.isPending ? (
-          <Spinner />
-        ) : activity.isError ? (
-          <ErrorNote error={activity.error} />
-        ) : !activity.data?.items?.length ? (
-          <EmptyState title="No activity recorded" />
-        ) : (
+        <QueryState query={activity} empty={items.length === 0} emptyState={<EmptyState title="No activity recorded" />}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -335,7 +337,7 @@ export function ActivityCard({ userId, title = 'My activity' }: { userId?: strin
                 </tr>
               </thead>
               <tbody>
-                {activity.data.items.map((a) => (
+                {items.map((a) => (
                   <tr key={a.itemId} className="border-b last:border-0">
                     <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">{formatDate(a.createdDate)}</td>
                     <td className="px-2 py-2">{a.category}</td>
@@ -350,7 +352,7 @@ export function ActivityCard({ userId, title = 'My activity' }: { userId?: strin
               </tbody>
             </table>
           </div>
-        )}
+        </QueryState>
         <Pager zeroBased page={page} pageCount={Math.ceil(total / pageSize)} total={total} onChange={setPage} />
       </CardContent>
     </Card>

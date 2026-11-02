@@ -59,7 +59,7 @@ export function useAssignUserAccess() {
         userId,
         roles,
         permissions ?? [],
-        organizationId !== undefined ? organizationId : activeOrgId,
+        organizationId === undefined ? activeOrgId : organizationId,
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['iam', 'users'] });
@@ -73,7 +73,7 @@ export function useRevokeUserAccess() {
   const { activeOrgId } = useActiveOrg();
   return useMutation({
     mutationFn: ({ userId, organizationId }: { userId: string; organizationId?: string | null }) =>
-      users.revokeAccess(userId, organizationId !== undefined ? organizationId : activeOrgId),
+      users.revokeAccess(userId, organizationId === undefined ? activeOrgId : organizationId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['iam', 'users'] }),
   });
 }

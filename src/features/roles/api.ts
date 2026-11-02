@@ -97,11 +97,21 @@ export interface UpdateRoleInput {
  * convention keeps roles from the two surfaces from looking like different species.
  */
 export function slugify(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+  return trimUnderscores(
+    name
+      .trim()
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, '_'),
+  );
+}
+
+/** Drops leading and trailing underscores. */
+function trimUnderscores(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === '_') start++;
+  while (end > start && value[end - 1] === '_') end--;
+  return value.slice(start, end);
 }
 
 export const roles = {

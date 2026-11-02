@@ -191,7 +191,7 @@ function ApiLogIndicator() {
   );
 }
 
-function Nav({ onNavigate }: { onNavigate?: () => void }) {
+function Nav({ onNavigate }: Readonly<{ onNavigate?: () => void }>) {
   const t = useT();
   return (
     <nav className="flex-1 space-y-4 overflow-y-auto p-3">
@@ -272,8 +272,18 @@ export function AppShell() {
       </aside>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
+        <dialog
+          open
+          aria-modal="true"
+          className="fixed inset-0 z-40 m-0 h-auto max-h-none w-auto max-w-none border-0 bg-transparent p-0 text-inherit md:hidden"
+        >
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Close menu"
+            className="absolute inset-0 cursor-default bg-black/50"
+            onClick={() => setMobileOpen(false)}
+          />
           <aside className="relative flex h-full w-64 flex-col border-r bg-card">
             <div className="flex items-center justify-between pr-2">
               {brand}
@@ -284,7 +294,7 @@ export function AppShell() {
             <Nav onNavigate={() => setMobileOpen(false)} />
             {signOut}
           </aside>
-        </div>
+        </dialog>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">

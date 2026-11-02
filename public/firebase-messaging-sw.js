@@ -31,13 +31,13 @@ function sameSite(link) {
 }
 
 async function focusOrOpen(href) {
-  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const windows = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
   const exact = windows.find((w) => w.url === href);
   // The app's home is a "just bring me back" click: any open tab of the app will do.
   const any = href === new URL('/', self.location.origin).href ? windows[0] : undefined;
   const tab = exact || any;
   if (tab) return tab.focus();
-  return self.clients.openWindow(href);
+  return globalThis.clients.openWindow(href);
 }
 
 /**
@@ -59,7 +59,7 @@ self.addEventListener('notificationclick', (event) => {
 
 // A new worker takes over at once, so a changed config (new query string) applies without
 // waiting for every tab to close. Its scope controls no page, so there is nothing to claim.
-self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('install', () => globalThis.skipWaiting());
 
 importScripts(
   `https://www.gstatic.com/firebasejs/${sdk}/firebase-app-compat.js`,

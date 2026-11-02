@@ -91,7 +91,7 @@ export const credentialModeLabel = (mode: CredentialModeValue) =>
  */
 export function inviteUrl(link: GeneratedSignupLink): string {
   if (link.url) return link.url;
-  return `${window.location.origin}/invitation#link=${encodeURIComponent(link.code)}`;
+  return `${globalThis.location.origin}/invitation#link=${encodeURIComponent(link.code)}`;
 }
 
 export const signupLinks = {

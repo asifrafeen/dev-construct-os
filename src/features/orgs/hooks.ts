@@ -91,13 +91,12 @@ export class OrgSwitchNotAppliedError extends Error {
     names: Map<string, string>,
   ) {
     const label = (id: string) => (names.has(id) ? `"${names.get(id)}"` : `"${id}"`);
+    const defaultNote =
+      requested === 'default' ? ' A multi-organization project does not let a session switch into "default".' : '';
     super(
       actual === null
         ? `The switch to ${label(requested)} could not be confirmed: IAM reports no organization for this session.`
-        : `IAM did not switch to ${label(requested)}. The session is still in ${label(actual)}.` +
-            (requested === 'default'
-              ? ' A multi-organization project does not let a session switch into "default".'
-              : ''),
+        : `IAM did not switch to ${label(requested)}. The session is still in ${label(actual)}.${defaultNote}`,
     );
     this.name = 'OrgSwitchNotAppliedError';
   }

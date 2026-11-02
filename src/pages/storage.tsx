@@ -31,7 +31,7 @@ import {
 } from '@/features/files/api';
 import { useDeleteFile, useUploadFile } from '@/features/files/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal, Field } from '@/components/ui/modal';
 import { Checkbox, Select, Textarea, parseJsonInput } from '@/components/ui/form';
@@ -99,7 +99,7 @@ function Browser() {
   const [path, setPath] = useState<Crumb[]>([]);
   const [moduleName, setModuleName] = useState<number>(MODULES.Default_Cloud);
   const [newFolder, setNewFolder] = useState(false);
-  const current = path[path.length - 1];
+  const current = path.at(-1);
   const upload = useUploadFile({ parentDirectoryId: current?.id ?? '', moduleName });
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
 
@@ -173,15 +173,13 @@ function Browser() {
         ))}
       </CardHeader>
       <CardContent>
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : items.length === 0 ? (
-          <EmptyState title="Empty" description="Upload a file or create a folder here." />
-        ) : (
+        <QueryState
+          query={list}
+          empty={items.length === 0}
+          emptyState={<EmptyState title="Empty" description="Upload a file or create a folder here." />}
+        >
           <ObjectTable items={items} onOpenDir={(o) => setPath([...path, { id: o.itemId, name: o.name }])} />
-        )}
+        </QueryState>
         {list.hasNextPage && (
           <Button variant="outline" size="sm" className="mt-3" disabled={list.isFetchingNextPage} onClick={() => list.fetchNextPage()}>
             {list.isFetchingNextPage ? 'Loading…' : 'Load more'}
@@ -201,7 +199,10 @@ type Dialog =
   | { kind: 'details'; obj: StorageObject }
   | { kind: 'delete'; obj: StorageObject };
 
-function ObjectTable({ items, onOpenDir }: { items: StorageObject[]; onOpenDir?: (o: StorageObject) => void }) {
+function ObjectTable({
+  items,
+  onOpenDir,
+}: Readonly<{ items: StorageObject[]; onOpenDir?: (o: StorageObject) => void }>) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const open = useMutation({
     mutationFn: (fileId: string) => files.get(fileId),
@@ -293,7 +294,7 @@ function ObjectTable({ items, onOpenDir }: { items: StorageObject[]; onOpenDir?:
   );
 }
 
-function IconBtn({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
+function IconBtn({ title, onClick, children }: Readonly<{ title: string; onClick: () => void; children: ReactNode }>) {
   return (
     <Button variant="ghost" size="icon" className="h-7 w-7" title={title} onClick={onClick}>
       {children}
@@ -301,7 +302,7 @@ function IconBtn({ title, onClick, children }: { title: string; onClick: () => v
   );
 }
 
-function PermissionBadges({ p }: { p?: StorageObject['permissions'] }) {
+function PermissionBadges({ p }: Readonly<{ p?: StorageObject['permissions'] }>) {
   if (!p) return <span className="text-xs text-muted-foreground">—</span>;
   const flags = (['canView', 'canDownload', 'canEdit', 'canDelete', 'canManage', 'canOwner'] as const).filter((k) => p[k]);
   return (
@@ -315,7 +316,11 @@ function PermissionBadges({ p }: { p?: StorageObject['permissions'] }) {
   );
 }
 
-function NewFolderModal({ parentId, moduleName, onClose }: { parentId?: string; moduleName: number; onClose: () => void }) {
+function NewFolderModal({
+  parentId,
+  moduleName,
+  onClose,
+}: Readonly<{ parentId?: string; moduleName: number; onClose: () => void }>) {
   const invalidate = useInvalidateStorage();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -359,7 +364,7 @@ function NewFolderModal({ parentId, moduleName, onClose }: { parentId?: string; 
   );
 }
 
-function RenameModal({ obj, onClose }: { obj: StorageObject; onClose: () => void }) {
+function RenameModal({ obj, onClose }: Readonly<{ obj: StorageObject; onClose: () => void }>) {
   const invalidate = useInvalidateStorage();
   const [name, setName] = useState(obj.name);
   const rename = useMutation({
@@ -387,7 +392,7 @@ function RenameModal({ obj, onClose }: { obj: StorageObject; onClose: () => void
   );
 }
 
-function MoveModal({ obj, copy, onClose }: { obj: StorageObject; copy: boolean; onClose: () => void }) {
+function MoveModal({ obj, copy, onClose }: Readonly<{ obj: StorageObject; copy: boolean; onClose: () => void }>) {
   const invalidate = useInvalidateStorage();
   const [target, setTarget] = useState('');
   const [copyPolicies, setCopyPolicies] = useState(false);
@@ -431,7 +436,7 @@ function MoveModal({ obj, copy, onClose }: { obj: StorageObject; copy: boolean; 
   );
 }
 
-function DeleteModal({ obj, onClose }: { obj: StorageObject; onClose: () => void }) {
+function DeleteModal({ obj, onClose }: Readonly<{ obj: StorageObject; onClose: () => void }>) {
   const invalidate = useInvalidateStorage();
   const delFile = useDeleteFile();
   const [permanent, setPermanent] = useState(false);
@@ -465,7 +470,7 @@ function DeleteModal({ obj, onClose }: { obj: StorageObject; onClose: () => void
   );
 }
 
-function DetailsModal({ obj, onClose }: { obj: StorageObject; onClose: () => void }) {
+function DetailsModal({ obj, onClose }: Readonly<{ obj: StorageObject; onClose: () => void }>) {
   const invalidate = useInvalidateStorage();
   const detail = useQuery({
     queryKey: [...STORAGE_KEY, 'detail', obj.itemId],
@@ -481,7 +486,9 @@ function DetailsModal({ obj, onClose }: { obj: StorageObject; onClose: () => voi
   });
   return (
     <Modal open onClose={onClose} title={obj.name} description={`${obj.type} · ${obj.itemId}`} className="max-w-2xl">
-      {detail.isPending ? <Spinner /> : detail.isError ? <ErrorNote error={detail.error} /> : <JsonView value={detail.data} />}
+      <QueryState query={detail}>
+        <JsonView value={detail.data} />
+      </QueryState>
       {obj.type === 'file' && (
         <div className="space-y-2">
           <p className="text-sm font-medium">Additional properties</p>
@@ -496,7 +503,7 @@ function DetailsModal({ obj, onClose }: { obj: StorageObject; onClose: () => voi
   );
 }
 
-function VersionsModal({ obj, onClose }: { obj: StorageObject; onClose: () => void }) {
+function VersionsModal({ obj, onClose }: Readonly<{ obj: StorageObject; onClose: () => void }>) {
   const invalidate = useInvalidateStorage();
   const versions = useQuery({ queryKey: [...STORAGE_KEY, 'versions', obj.itemId], queryFn: () => files.versions(obj.itemId) });
   const openVersion = useMutation({
@@ -512,7 +519,7 @@ function VersionsModal({ obj, onClose }: { obj: StorageObject; onClose: () => vo
         headers: {
           'Content-Type': file.type || 'application/octet-stream',
           ...(/\.blob\.core\.windows\.net/i.test(v.uploadUrl) ? { 'x-ms-blob-type': 'BlockBlob' } : {}),
-          ...(v.requiredHeaders ?? {}),
+          ...v.requiredHeaders,
         },
         body: file,
       });
@@ -542,11 +549,7 @@ function VersionsModal({ obj, onClose }: { obj: StorageObject; onClose: () => vo
         />
       </label>
       {newVersion.isError && <ErrorNote error={newVersion.error} />}
-      {versions.isPending ? (
-        <Spinner />
-      ) : versions.isError ? (
-        <ErrorNote error={versions.error} />
-      ) : (
+      <QueryState query={versions}>
         <ul className="divide-y text-sm">
           {(versions.data?.items ?? []).map((v) => (
             <li key={v.itemId} className="flex items-center justify-between gap-2 py-2">
@@ -559,15 +562,25 @@ function VersionsModal({ obj, onClose }: { obj: StorageObject; onClose: () => vo
             </li>
           ))}
         </ul>
-      )}
+      </QueryState>
     </Modal>
   );
 }
 
 const PRINCIPALS: PrincipalType[] = ['User', 'Role', 'Everyone', 'Organization'];
 const PERMISSIONS: StoragePermission[] = ['View', 'Download', 'Edit', 'Delete', 'Manage', 'Owner'];
+const PRINCIPAL_ID_PLACEHOLDER: Partial<Record<PrincipalType, string>> = { Role: 'role slug', Organization: 'organization id' };
 
-function AccessModal({ obj, onClose }: { obj: StorageObject; onClose: () => void }) {
+function principalFields(
+  principalType: PrincipalType,
+  principalId: string,
+): Pick<PolicyInput, 'principalId' | 'organizationId'> {
+  if (principalType === 'Everyone') return {};
+  if (principalType === 'Organization') return { organizationId: principalId.trim() };
+  return { principalId: principalId.trim() };
+}
+
+function AccessModal({ obj, onClose }: Readonly<{ obj: StorageObject; onClose: () => void }>) {
   const resourceType = obj.type === 'directory' ? 'Directory' : 'File';
   const policies = useQuery({ queryKey: [...STORAGE_KEY, 'policies', obj.itemId], queryFn: () => objects.policies(obj.itemId) });
   const resolved = useQuery({ queryKey: [...STORAGE_KEY, 'resolve', obj.itemId], queryFn: () => objects.resolve(obj.itemId) });
@@ -589,7 +602,7 @@ function AccessModal({ obj, onClose }: { obj: StorageObject; onClose: () => void
         resourceId: obj.itemId,
         resourceType,
         principalType,
-        ...(principalType === 'Everyone' ? {} : principalType === 'Organization' ? { organizationId: principalId.trim() } : { principalId: principalId.trim() }),
+        ...principalFields(principalType, principalId),
         permission,
         ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
       };
@@ -618,15 +631,13 @@ function AccessModal({ obj, onClose }: { obj: StorageObject; onClose: () => void
 
       <div>
         <p className="mb-1 text-sm font-medium">Policies (including inherited)</p>
-        {policies.isPending ? (
-          <Spinner />
-        ) : policies.isError ? (
-          <ErrorNote error={policies.error} />
-        ) : !policies.data?.length ? (
-          <p className="text-sm text-muted-foreground">No explicit policies.</p>
-        ) : (
+        <QueryState
+          query={policies}
+          empty={!policies.data?.length}
+          emptyState={<p className="text-sm text-muted-foreground">No explicit policies.</p>}
+        >
           <ul className="divide-y text-sm">
-            {policies.data.map((p) => (
+            {(policies.data ?? []).map((p) => (
               <li key={p.itemId} className="flex items-center justify-between gap-2 py-2">
                 <span>
                   <Badge tone={String(p.effect) === 'Deny' || p.effect === 2 ? 'danger' : 'success'}>{String(p.effect)}</Badge>{' '}
@@ -642,7 +653,7 @@ function AccessModal({ obj, onClose }: { obj: StorageObject; onClose: () => void
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
         {revoke.isError && <ErrorNote error={revoke.error} />}
       </div>
 
@@ -656,7 +667,7 @@ function AccessModal({ obj, onClose }: { obj: StorageObject; onClose: () => void
           </Select>
           {principalType !== 'Everyone' && (
             <Input
-              placeholder={principalType === 'Role' ? 'role slug' : principalType === 'Organization' ? 'organization id' : 'user id'}
+              placeholder={PRINCIPAL_ID_PLACEHOLDER[principalType] ?? 'user id'}
               value={principalId}
               onChange={(e) => setPrincipalId(e.target.value)}
             />
@@ -692,6 +703,14 @@ function SearchTab() {
     queryFn: () => objects.search(submitted),
     enabled: !!submitted,
   });
+  let results: ReactNode = null;
+  if (search.isFetching) {
+    results = <Spinner />;
+  } else if (search.isError) {
+    results = <ErrorNote error={search.error} />;
+  } else if (search.data) {
+    results = search.data.items?.length ? <ObjectTable items={search.data.items} /> : <EmptyState title="No matches" />;
+  }
   return (
     <Card>
       <CardContent className="space-y-4 p-5">
@@ -707,23 +726,17 @@ function SearchTab() {
             <Search className="h-4 w-4" /> Search
           </Button>
         </form>
-        {search.isFetching ? (
-          <Spinner />
-        ) : search.isError ? (
-          <ErrorNote error={search.error} />
-        ) : search.data ? (
-          search.data.items?.length ? (
-            <ObjectTable items={search.data.items} />
-          ) : (
-            <EmptyState title="No matches" />
-          )
-        ) : null}
+        {results}
       </CardContent>
     </Card>
   );
 }
 
-function FlatList({ title, queryKey, fetchPage }: { title: string; queryKey: string; fetchPage: (cursor?: string) => Promise<ObjectPage> }) {
+function FlatList({
+  title,
+  queryKey,
+  fetchPage,
+}: Readonly<{ title: string; queryKey: string; fetchPage: (cursor?: string) => Promise<ObjectPage> }>) {
   const list = useInfiniteQuery({
     queryKey: [...STORAGE_KEY, queryKey],
     queryFn: ({ pageParam }) => fetchPage(pageParam),
@@ -737,15 +750,9 @@ function FlatList({ title, queryKey, fetchPage }: { title: string; queryKey: str
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : items.length ? (
+        <QueryState query={list} empty={items.length === 0} emptyState={<EmptyState title="Nothing here" />}>
           <ObjectTable items={items} />
-        ) : (
-          <EmptyState title="Nothing here" />
-        )}
+        </QueryState>
         {list.hasNextPage && (
           <Button variant="outline" size="sm" className="mt-3" onClick={() => list.fetchNextPage()}>
             Load more
@@ -771,13 +778,7 @@ function TrashTab() {
       <CardContent>
         {restore.isError && <ErrorNote error={restore.error} />}
         {purge.isError && <ErrorNote error={purge.error} />}
-        {trash.isPending ? (
-          <Spinner />
-        ) : trash.isError ? (
-          <ErrorNote error={trash.error} />
-        ) : !items.length ? (
-          <EmptyState title="Trash is empty" />
-        ) : (
+        <QueryState query={trash} empty={items.length === 0} emptyState={<EmptyState title="Trash is empty" />}>
           <ul className="divide-y text-sm">
             {items.map((o) => (
               <li key={o.itemId} className="flex items-center justify-between gap-2 py-2">
@@ -797,7 +798,7 @@ function TrashTab() {
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
     </Card>
   );

@@ -6,7 +6,7 @@ import { useUsers } from '@/features/users/hooks';
 import { AssignRolesModal } from '@/features/users/assign-roles-modal';
 import { BulkRolesModal } from '@/features/users/bulk-roles-modal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { displayName, formatDate, initials } from '@/lib/utils';
 
@@ -59,16 +59,16 @@ export function UsersPage() {
         </CardHeader>
 
         <CardContent>
-          {isPending ? (
-            <Spinner />
-          ) : isError ? (
-            <ErrorNote error={error} />
-          ) : rows.length === 0 ? (
-            <EmptyState
-              title="No users to show"
-              description={search ? 'Nothing on this page matches your filter.' : undefined}
-            />
-          ) : (
+          <QueryState
+            query={{ isPending, isError, error }}
+            empty={rows.length === 0}
+            emptyState={
+              <EmptyState
+                title="No users to show"
+                description={search ? 'Nothing on this page matches your filter.' : undefined}
+              />
+            }
+          >
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -154,7 +154,7 @@ export function UsersPage() {
                 </tbody>
               </table>
             </div>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
 

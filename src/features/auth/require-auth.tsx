@@ -13,7 +13,7 @@ export interface LoginRedirectState {
   sessionEnded?: boolean;
 }
 
-export function RequireAuth({ children }: { children: ReactNode }) {
+export function RequireAuth({ children }: Readonly<{ children: ReactNode }>) {
   const { isLoggedIn, isChecking } = useIsLoggedIn(); // one cached GET /iam/me
   const location = useLocation();
   const qc = useQueryClient();

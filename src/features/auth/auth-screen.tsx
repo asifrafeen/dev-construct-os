@@ -15,7 +15,7 @@ export function AuthScreen({
   backTo,
   backLabel = 'Back to sign in',
   wide = false,
-}: {
+}: Readonly<{
   icon: ComponentType<{ className?: string }>;
   tone?: 'primary' | 'destructive' | 'success';
   title: string;
@@ -25,7 +25,7 @@ export function AuthScreen({
   backLabel?: string;
   /** Roomier column, for forms with side-by-side fields. */
   wide?: boolean;
-}) {
+}>) {
   const tones = {
     primary: 'bg-primary/10 text-primary',
     destructive: 'bg-destructive/10 text-destructive',

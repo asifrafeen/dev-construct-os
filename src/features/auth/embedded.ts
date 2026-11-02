@@ -23,7 +23,7 @@ import { IAM_BASE, withoutPort } from '@/lib/env';
  * the hosted flow's redirectUri: the providers match it byte-for-byte, and only
  * the port-less form is registered.
  */
-export const SOCIAL_REDIRECT_URI = withoutPort(`${window.location.origin}/callback`);
+export const SOCIAL_REDIRECT_URI = withoutPort(`${globalThis.location.origin}/callback`);
 
 export interface SsoProvider {
   /** Canonical name: "google", "microsoft", … */
@@ -211,7 +211,7 @@ export async function startSocialLogin(provider: SsoProvider): Promise<never> {
   // provider does not echo it back.
   sessionStorage.setItem(PROVIDER_KEY, provider.provider);
 
-  window.location.assign(authorizationUrl);
+  globalThis.location.assign(authorizationUrl);
   return new Promise<never>(() => {}); // navigation in flight; never resolves
 }
 
@@ -292,6 +292,10 @@ export function unknownUserEmail(error: unknown): string | null {
   const payload = body as { error?: string; error_description?: string } | null;
   if (payload?.error !== 'user_not_found') return null;
 
-  const match = /[^\s]+@[^\s]+/.exec(payload.error_description ?? '');
-  return match ? match[0] : null;
+  // The first whitespace-separated word with at least one character either side of an "@".
+  const email = (payload.error_description ?? '').split(/\s+/).find((word) => {
+    const at = word.indexOf('@', 1);
+    return at !== -1 && at < word.length - 1;
+  });
+  return email ?? null;
 }

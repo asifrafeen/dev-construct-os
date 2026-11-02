@@ -193,11 +193,15 @@ async function raw(url: string, method: HttpMethod, body: unknown, headers?: Rec
   }
 }
 
+function subPathSuffix(subPath: string): string {
+  return subPath ? `/${subPath.replace(/^\/+/, '')}` : '';
+}
+
 export const functions = {
   /** Default is async: 202 `{ runId, status, pollToken }` — poll `result` with that token. */
   invoke: (functionId: string, subPath: string, method: HttpMethod, body: unknown, waitSeconds?: number) =>
     raw(
-      `${LOGIC_BASE}/fn/${encodeURIComponent(functionId)}${subPath ? `/${subPath.replace(/^\/+/, '')}` : ''}`,
+      `${LOGIC_BASE}/fn/${encodeURIComponent(functionId)}${subPathSuffix(subPath)}`,
       method,
       body,
       waitSeconds ? { Prefer: `wait=${waitSeconds}` } : undefined,
@@ -208,5 +212,5 @@ export const functions = {
 
 export const proxies = {
   call: (slug: string, subPath: string, method: HttpMethod, body: unknown) =>
-    raw(`${LOGIC_BASE}/proxy/gateway/${encodeURIComponent(slug)}${subPath ? `/${subPath.replace(/^\/+/, '')}` : ''}`, method, body),
+    raw(`${LOGIC_BASE}/proxy/gateway/${encodeURIComponent(slug)}${subPathSuffix(subPath)}`, method, body),
 };

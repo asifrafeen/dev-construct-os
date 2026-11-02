@@ -76,8 +76,8 @@ export interface Secret {
   name: string;
   description?: string;
   tags?: string[];
-  type?: 'api' | 'service' | 'both' | string;
-  status?: 'active' | 'locked' | 'deleted' | string;
+  type?: string;
+  status?: string;
   access?: { userIds?: string[]; roles?: string[] };
   createdDate?: string;
   createdBy?: string;

@@ -13,16 +13,15 @@ import {
   type ExecutionSummary,
   type HttpMethod,
   type Schedule,
-  type WorkflowDetail,
   type WorkflowNode,
 } from '@/features/logic/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal, Field } from '@/components/ui/modal';
 import { Checkbox, Select, Textarea, parseJsonInput } from '@/components/ui/form';
 import { CopyButton, DetailList, JsonView, PageHeader, Tabs } from '@/components/ui/layout';
-import { cn, formatDate } from '@/lib/utils';
+import { cn, formatDate, toText } from '@/lib/utils';
 
 type Tab = 'workflows' | 'scheduler' | 'functions';
 
@@ -58,13 +57,18 @@ export function WorkflowsPage() {
   );
 }
 
-const statusTone = (s?: number) => (s === 4 ? 'success' : s === 5 ? 'danger' : 'default');
+const statusTone = (s?: number) => {
+  if (s === 4) return 'success';
+  if (s === 5) return 'danger';
+  return 'default';
+};
 
 function WorkflowsTab() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const list = useQuery({ queryKey: ['logic', 'workflows', search], queryFn: () => workflows.list({ search: search.trim() || undefined, pageSize: 100 }) });
+  const items = list.data?.data ?? [];
 
   return (
     <div className="grid gap-4 xl:grid-cols-[18rem_minmax(0,1fr)]">
@@ -79,15 +83,13 @@ function WorkflowsTab() {
           <Input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </CardHeader>
         <CardContent className="max-h-[65vh] overflow-y-auto">
-          {list.isPending ? (
-            <Spinner />
-          ) : list.isError ? (
-            <ErrorNote error={list.error} />
-          ) : !list.data?.data?.length ? (
-            <EmptyState title="No workflows" description="Build one in Blocks OS → Logic, or create an empty one here." />
-          ) : (
+          <QueryState
+            query={list}
+            empty={items.length === 0}
+            emptyState={<EmptyState title="No workflows" description="Build one in Blocks OS → Logic, or create an empty one here." />}
+          >
             <ul className="space-y-0.5">
-              {list.data.data.map((w) => (
+              {items.map((w) => (
                 <li key={w.itemId}>
                   <button
                     className={cn('flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent', selected === w.itemId && 'bg-accent font-medium')}
@@ -102,7 +104,7 @@ function WorkflowsTab() {
                 </li>
               ))}
             </ul>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
       {selected ? (
@@ -119,7 +121,7 @@ function WorkflowsTab() {
   );
 }
 
-function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+function CreateWorkflowModal({ onClose, onCreated }: Readonly<{ onClose: () => void; onCreated: (id: string) => void }>) {
   const qc = useQueryClient();
   const [name, setName] = useState('Construct OS test workflow');
   const [description, setDescription] = useState('');
@@ -148,7 +150,7 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
   );
 }
 
-function WorkflowPanel({ workflowId, onDeleted }: { workflowId: string; onDeleted: () => void }) {
+function WorkflowPanel({ workflowId, onDeleted }: Readonly<{ workflowId: string; onDeleted: () => void }>) {
   const qc = useQueryClient();
   const wf = useQuery({ queryKey: ['logic', 'workflow', workflowId], queryFn: () => workflows.get(workflowId) });
   const versions = useQuery({ queryKey: ['logic', 'versions', workflowId], queryFn: () => workflows.versions(workflowId), retry: false });
@@ -161,8 +163,9 @@ function WorkflowPanel({ workflowId, onDeleted }: { workflowId: string; onDelete
   const remove = useMutation({ mutationFn: () => workflows.remove(workflowId), onSuccess: () => { refresh(); onDeleted(); } });
   const publishVersion = useMutation({ mutationFn: (versionId: string) => workflows.publishVersion(workflowId, versionId), onSuccess: refresh });
 
-  const detail = wf.data?.data as WorkflowDetail | undefined;
+  const detail = wf.data?.data;
   const triggers = (detail?.nodes ?? []).filter(isTriggerNode);
+  const versionList = versions.data?.data ?? [];
 
   if (wf.isPending) return <Spinner />;
   if (wf.isError) return <ErrorNote error={wf.error} />;
@@ -197,7 +200,9 @@ function WorkflowPanel({ workflowId, onDeleted }: { workflowId: string; onDelete
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
-          {[publish, unpublish, duplicate, remove, publishVersion].map((m, i) => m.isError && <ErrorNote key={i} error={m.error} />)}
+          {Object.entries({ publish, unpublish, duplicate, remove, publishVersion }).map(
+            ([key, m]) => m.isError && <ErrorNote key={key} error={m.error} />,
+          )}
           <details>
             <summary className="cursor-pointer text-sm text-muted-foreground">Nodes & edges (raw)</summary>
             <JsonView value={{ nodes: detail.nodes, edges: detail.edges, settings: detail.settings }} />
@@ -220,15 +225,13 @@ function WorkflowPanel({ workflowId, onDeleted }: { workflowId: string; onDelete
           <CardTitle className="text-base">Versions</CardTitle>
         </CardHeader>
         <CardContent>
-          {versions.isPending ? (
-            <Spinner />
-          ) : versions.isError ? (
-            <ErrorNote error={versions.error} />
-          ) : !versions.data?.data?.length ? (
-            <p className="text-sm text-muted-foreground">No versions yet — publishing creates one.</p>
-          ) : (
+          <QueryState
+            query={versions}
+            empty={versionList.length === 0}
+            emptyState={<p className="text-sm text-muted-foreground">No versions yet — publishing creates one.</p>}
+          >
             <ul className="divide-y text-sm">
-              {versions.data.data.map((v) => (
+              {versionList.map((v) => (
                 <li key={v.itemId} className="flex items-center justify-between gap-2 py-2">
                   <span>
                     {v.name} {v.isPublished && <Badge tone="success">published</Badge>}
@@ -242,14 +245,14 @@ function WorkflowPanel({ workflowId, onDeleted }: { workflowId: string; onDelete
                 </li>
               ))}
             </ul>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function TriggerCard({ workflowId, node, published }: { workflowId: string; node: WorkflowNode; published: boolean }) {
+function TriggerCard({ workflowId, node, published }: Readonly<{ workflowId: string; node: WorkflowNode; published: boolean }>) {
   const qc = useQueryClient();
   const isWebhook = node.type === 'webhook';
   const [payload, setPayload] = useState('{\n  "name": "Construct OS",\n  "email": "test@example.com"\n}');
@@ -282,7 +285,7 @@ function TriggerCard({ workflowId, node, published }: { workflowId: string; node
         <CardDescription>
           {isWebhook ? (
             <>
-              auth <code>{String(params.authType ?? 'none')}</code> · response mode <code>{String(params.httpResponseMode ?? 'immediate')}</code>
+              auth <code>{toText(params.authType, 'none')}</code> · response mode <code>{toText(params.httpResponseMode, 'immediate')}</code>
             </>
           ) : (
             'Not a webhook — it fires on its own schedule/event. Step-execute runs just this node.'
@@ -329,7 +332,7 @@ function TriggerCard({ workflowId, node, published }: { workflowId: string; node
             Step-execute this node
           </Button>
         )}
-        {[listen, fire, step].map((m, i) => m.isError && <ErrorNote key={i} error={m.error} />)}
+        {Object.entries({ listen, fire, step }).map(([key, m]) => m.isError && <ErrorNote key={key} error={m.error} />)}
         {fire.data && <JsonView value={fire.data} maxHeight="max-h-40" />}
         {step.data && <JsonView value={step.data} maxHeight="max-h-40" />}
         {executionId && execution.data?.data && (
@@ -347,9 +350,10 @@ function TriggerCard({ workflowId, node, published }: { workflowId: string; node
   );
 }
 
-function ExecutionsCard({ workflowId }: { workflowId: string }) {
+function ExecutionsCard({ workflowId }: Readonly<{ workflowId: string }>) {
   const list = useQuery({ queryKey: ['logic', 'executions', workflowId], queryFn: () => workflows.executions(workflowId, { pageSize: 25 }), refetchInterval: 10_000 });
   const [open, setOpen] = useState<ExecutionSummary | null>(null);
+  const executions = list.data?.data ?? [];
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -362,15 +366,9 @@ function ExecutionsCard({ workflowId }: { workflowId: string }) {
         </Button>
       </CardHeader>
       <CardContent>
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : !list.data?.data?.length ? (
-          <EmptyState title="No executions yet" />
-        ) : (
+        <QueryState query={list} empty={executions.length === 0} emptyState={<EmptyState title="No executions yet" />}>
           <ul className="divide-y text-sm">
-            {list.data.data.map((e) => (
+            {executions.map((e) => (
               <li key={e.id}>
                 <button className="flex w-full items-center justify-between gap-2 py-2 text-left hover:bg-accent/40" onClick={() => setOpen(e)}>
                   <span className="flex items-center gap-2">
@@ -383,14 +381,14 @@ function ExecutionsCard({ workflowId }: { workflowId: string }) {
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
       {open && <ExecutionModal summary={open} onClose={() => setOpen(null)} />}
     </Card>
   );
 }
 
-function ExecutionModal({ summary, onClose }: { summary: ExecutionSummary; onClose: () => void }) {
+function ExecutionModal({ summary, onClose }: Readonly<{ summary: ExecutionSummary; onClose: () => void }>) {
   const detail = useQuery({ queryKey: ['logic', 'execution', summary.id], queryFn: () => workflows.execution(summary.id) });
   const logs = useQuery({ queryKey: ['logic', 'execution-logs', summary.id], queryFn: () => workflows.executionLogs(summary.id), retry: false });
   const resume = useMutation({ mutationFn: () => workflows.resume(summary.id) });
@@ -413,23 +411,21 @@ function ExecutionModal({ summary, onClose }: { summary: ExecutionSummary; onClo
       {resume.isError && <ErrorNote error={resume.error} />}
       {resume.data && <JsonView value={resume.data} maxHeight="max-h-32" />}
       <p className="text-sm font-medium">Logs</p>
-      {logs.isPending ? (
-        <Spinner />
-      ) : logs.isError ? (
-        <ErrorNote error={logs.error} />
-      ) : (
+      <QueryState query={logs}>
         <div className="max-h-60 space-y-1 overflow-y-auto rounded-md bg-muted p-2 font-mono text-[11px]">
-          {(logs.data?.data?.logs ?? []).map((l, i) => (
-            <p key={i}>
+          {(logs.data?.data?.logs ?? []).map((l) => (
+            <p key={`${l.timestamp}-${l.level}-${l.nodeName}-${l.message}`}>
               <span className="text-muted-foreground">{l.timestamp?.slice(11, 23)}</span> [{l.level}] {l.nodeName ? `${l.nodeName}: ` : ''}
               {l.message}
             </p>
           ))}
           {!logs.data?.data?.logs?.length && <p>No logs (availability {String(logs.data?.data?.availability ?? '—')}).</p>}
         </div>
-      )}
+      </QueryState>
       <p className="text-sm font-medium">Detail (node executions, items, snapshot)</p>
-      {detail.isPending ? <Spinner /> : detail.isError ? <ErrorNote error={detail.error} /> : <JsonView value={detail.data?.data} />}
+      <QueryState query={detail}>
+        <JsonView value={detail.data?.data} />
+      </QueryState>
     </Modal>
   );
 }
@@ -480,14 +476,8 @@ function SchedulerTab() {
           <CardDescription>Cron jobs that call a webhook — point one at a workflow's webhook URL to run it on a timer.</CardDescription>
         </CardHeader>
         <CardContent>
-          {[remove, toggle].map((m, i) => m.isError && <ErrorNote key={i} error={m.error} />)}
-          {list.isPending ? (
-            <Spinner />
-          ) : list.isError ? (
-            <ErrorNote error={list.error} />
-          ) : !rows.length ? (
-            <EmptyState title="No schedules" />
-          ) : (
+          {Object.entries({ remove, toggle }).map(([key, m]) => m.isError && <ErrorNote key={key} error={m.error} />)}
+          <QueryState query={list} empty={rows.length === 0} emptyState={<EmptyState title="No schedules" />}>
             <ul className="divide-y text-sm">
               {rows.map((s) => (
                 <li key={s.itemId} className="flex items-center justify-between gap-2 py-2">
@@ -510,7 +500,7 @@ function SchedulerTab() {
                 </li>
               ))}
             </ul>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
       <Card>

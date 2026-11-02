@@ -44,13 +44,13 @@ export function ProviderButton({
   busy,
   compact,
   onSelect,
-}: {
+}: Readonly<{
   provider: SsoProvider;
   disabled?: boolean;
   busy?: boolean;
   compact?: boolean;
   onSelect: (provider: SsoProvider) => void;
-}) {
+}>) {
   const mark = MARKS[provider.provider];
 
   return (

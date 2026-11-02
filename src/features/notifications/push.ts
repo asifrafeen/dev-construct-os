@@ -118,33 +118,33 @@ const APP_NAME = 'blocks-push';
 
 /** The APIs web push needs. Firebase's `isSupported()` checks a few more once it is loaded. */
 export const browserCanPush = () =>
-  'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  'serviceWorker' in navigator && 'PushManager' in globalThis && 'Notification' in globalThis;
+
+type UaRule = readonly [pattern: RegExp, name: string];
+
+const BROWSERS: readonly UaRule[] = [
+  [/Edg\//, 'Edge'],
+  [/OPR\//, 'Opera'],
+  [/Firefox\//, 'Firefox'],
+  [/Chrome\//, 'Chrome'],
+  [/Safari\//, 'Safari'],
+];
+
+const SYSTEMS: readonly UaRule[] = [
+  [/Windows/, 'Windows'],
+  [/Android/, 'Android'],
+  [/iPhone|iPad|iPod/, 'iOS'],
+  [/Mac OS X/, 'macOS'],
+  [/Linux/, 'Linux'],
+];
+
+const firstMatch = (ua: string, rules: readonly UaRule[]) => rules.find(([pattern]) => pattern.test(ua))?.[1];
 
 /** What the device list in Blocks OS shows for this browser, e.g. "Chrome on Windows". */
 export function deviceName(): string {
   const ua = navigator.userAgent;
-  const browser = /Edg\//.test(ua)
-    ? 'Edge'
-    : /OPR\//.test(ua)
-      ? 'Opera'
-      : /Firefox\//.test(ua)
-        ? 'Firefox'
-        : /Chrome\//.test(ua)
-          ? 'Chrome'
-          : /Safari\//.test(ua)
-            ? 'Safari'
-            : 'Browser';
-  const os = /Windows/.test(ua)
-    ? 'Windows'
-    : /Android/.test(ua)
-      ? 'Android'
-      : /iPhone|iPad|iPod/.test(ua)
-        ? 'iOS'
-        : /Mac OS X/.test(ua)
-          ? 'macOS'
-          : /Linux/.test(ua)
-            ? 'Linux'
-            : '';
+  const browser = firstMatch(ua, BROWSERS) ?? 'Browser';
+  const os = firstMatch(ua, SYSTEMS) ?? '';
   return os ? `${browser} on ${os}` : browser;
 }
 

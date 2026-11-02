@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, KeyRound, Loader2, ShieldAlert } from 'lucide-react';
 import { resetPassword } from '@/features/auth/api';
@@ -30,7 +30,7 @@ export function ResetPasswordPage() {
 
   const mismatch = confirm.length > 0 && password !== confirm;
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (password !== confirm) return setError('The two passwords do not match.');
 
