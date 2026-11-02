@@ -1,7 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
 import path from 'node:path';
 
 const CERT_DIR = '.cert';
@@ -37,32 +36,54 @@ function announceOrigin(url: string) {
 }
 
 /**
+ * HEAD's commit, read straight from `.git` rather than by running git — no binary looked
+ * up on PATH, and none needed. Handles a detached HEAD, loose and packed refs, and a
+ * worktree (`.git` file → gitdir, refs in its commondir). Empty when there is no repo.
+ */
+function gitHead(): string {
+  try {
+    let gitDir = '.git';
+    if (fs.statSync(gitDir).isFile()) {
+      const pointer = fs.readFileSync(gitDir, 'utf8').trim();
+      gitDir = path.resolve(pointer.startsWith('gitdir:') ? pointer.slice('gitdir:'.length).trim() : pointer);
+    }
+    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+    if (!head.startsWith('ref:')) return head;
+    const ref = head.slice('ref:'.length).trim();
+
+    const commonFile = path.join(gitDir, 'commondir');
+    const commonDir = fs.existsSync(commonFile)
+      ? path.resolve(gitDir, fs.readFileSync(commonFile, 'utf8').trim())
+      : gitDir;
+    for (const dir of [gitDir, commonDir]) {
+      const loose = path.join(dir, ref);
+      if (fs.existsSync(loose)) return fs.readFileSync(loose, 'utf8').trim();
+    }
+    const packed = path.join(commonDir, 'packed-refs');
+    if (!fs.existsSync(packed)) return '';
+    const line = fs
+      .readFileSync(packed, 'utf8')
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.endsWith(` ${ref}`));
+    return line ? line.slice(0, line.indexOf(' ')) : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * What this bundle is, for the Build page and for Release/Monitor testing.
  *
  * The commit comes from whichever variable the build environment provides — a CI
- * pipeline usually sets one of these — and only falls back to asking git locally. Inside
+ * pipeline usually sets one of these — and only falls back to the local repo. Inside
  * the Docker build `.git` is excluded, so that fallback quietly yields nothing.
  */
 function buildInfo(mode: string, env: Record<string, string>) {
   const pick = (...names: string[]) => names.map((n) => env[n]).find(Boolean) ?? '';
-  let commit = pick(
-    'VITE_GIT_SHA',
-    'GIT_COMMIT',
-    'GIT_SHA',
-    'COMMIT_SHA',
-    'SOURCE_COMMIT',
-    'GITHUB_SHA',
-    'BUILD_SOURCEVERSION',
-  );
-  if (!commit) {
-    try {
-      commit = execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
-        .toString()
-        .trim();
-    } catch {
-      commit = '';
-    }
-  }
+  const commit =
+    pick('VITE_GIT_SHA', 'GIT_COMMIT', 'GIT_SHA', 'COMMIT_SHA', 'SOURCE_COMMIT', 'GITHUB_SHA', 'BUILD_SOURCEVERSION') ||
+    gitHead();
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { version?: string };
   return {
     version: pkg.version ?? '0.0.0',
