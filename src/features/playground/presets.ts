@@ -46,7 +46,7 @@ export const PRESETS: Record<string, Preset[]> = {
     { label: 'Security summary', method: 'GET', path: '/iam/v4/security/summary' },
     { label: 'Sessions', method: 'GET', path: '/iam/v4/security/sessions' },
     { label: 'Activity', method: 'POST', path: '/iam/v4/security/activity', body: { page: 0, pageSize: 20 } },
-    { label: 'Password policy check (public)', method: 'POST', path: '/iam/v4/idp/password-check', body: { password: 'Test1234!' } },
+    { label: 'Password policy check (public)', method: 'POST', path: '/iam/v4/idp/password-check', body: { password: '' } },
     { label: 'Validate activation code (public)', method: 'POST', path: '/iam/v4/auth/validate-activation', body: { activationCode: '<code>' } },
     { label: 'Client credentials', method: 'GET', path: '/iam/v4/auth/client-credentials' },
     { label: 'Identity providers', method: 'GET', path: '/iam/v4/auth/identity-providers' },

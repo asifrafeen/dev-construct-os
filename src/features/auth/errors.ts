@@ -6,36 +6,39 @@ import { BlocksError } from '@/lib/blocks-client';
  * spelled out. Shared by the hosted flow (./sso.ts) and the embedded one
  * (./embedded.ts) — both surface the same IAM error vocabulary.
  */
-const ERROR_HELP: Record<string, string> = {
-  invalid_username_password: 'That email and password combination is not correct.',
-  account_locked:
+const ERROR_HELP: readonly (readonly [code: string, help: string])[] = [
+  ['invalid_username_password', 'That email and password combination is not correct.'],
+  [
+    'account_locked',
     'This account is temporarily locked after too many failed attempts. Wait a few minutes and try again.',
-  user_inactive_or_not_verified:
-    'That account is not active yet. Check your inbox for the activation email.',
-  mfa_enabled: 'This account needs a verification code. Enter the one that was just sent to you.',
-  mfa_enrollment_required: 'This account has to finish multi-factor enrolment before signing in.',
-  invalid_mfa_code: 'That verification code is not correct.',
-  mfa_session_expired: 'The verification step timed out. Start signing in again.',
-  captcha_enabled: 'This project requires a CAPTCHA. Complete the challenge below and try again.',
-  captcha_invalid: 'That CAPTCHA response was rejected. Solve the new challenge and try again.',
+  ],
+  ['user_inactive_or_not_verified', 'That account is not active yet. Check your inbox for the activation email.'],
+  ['mfa_enabled', 'This account needs a verification code. Enter the one that was just sent to you.'],
+  ['mfa_enrollment_required', 'This account has to finish multi-factor enrolment before signing in.'],
+  ['invalid_mfa_code', 'That verification code is not correct.'],
+  ['mfa_session_expired', 'The verification step timed out. Start signing in again.'],
+  ['captcha_enabled', 'This project requires a CAPTCHA. Complete the challenge below and try again.'],
+  ['captcha_invalid', 'That CAPTCHA response was rejected. Solve the new challenge and try again.'],
   // IAM matches federated logins to existing users by email and does not
   // auto-provision — the account has to be invited and activated first.
-  user_not_found:
+  [
+    'user_not_found',
     'There is no account with that email address on this project. An administrator has to invite it first.',
-  provider_not_found: 'That sign-in provider is not configured on this project.',
-  provider_inactive: 'That sign-in provider is switched off on this project.',
-  invalid_provider_type: 'That provider is not a social identity provider.',
-  state_data_not_found:
-    'This sign-in link has already been used or has expired. Start again from the sign-in page.',
-  state_data_invalid: 'This sign-in link is malformed. Start again from the sign-in page.',
-  code_require: 'The identity provider returned no authorization code.',
-  state_require: 'The identity provider returned no state value.',
-  access_denied: 'You cancelled the sign-in, or the identity provider refused it.',
-  invalid_client:
+  ],
+  ['provider_not_found', 'That sign-in provider is not configured on this project.'],
+  ['provider_inactive', 'That sign-in provider is switched off on this project.'],
+  ['invalid_provider_type', 'That provider is not a social identity provider.'],
+  ['state_data_not_found', 'This sign-in link has already been used or has expired. Start again from the sign-in page.'],
+  ['state_data_invalid', 'This sign-in link is malformed. Start again from the sign-in page.'],
+  ['code_require', 'The identity provider returned no authorization code.'],
+  ['state_require', 'The identity provider returned no state value.'],
+  ['access_denied', 'You cancelled the sign-in, or the identity provider refused it.'],
+  [
+    'invalid_client',
     'This app is not registered correctly with Blocks — the OIDC client id or redirect URI does not match.',
-  redirect_uri_mismatch:
-    'The redirect URI this app sent does not match the one registered on the provider.',
-};
+  ],
+  ['redirect_uri_mismatch', 'The redirect URI this app sent does not match the one registered on the provider.'],
+];
 
 /**
  * Turns an IAM error payload into a readable sentence. Bodies arrive either as
@@ -62,11 +65,11 @@ export function describeAuthError(status: number, body: unknown): string {
   // The provider does not always populate the code field — some errors name the
   // condition only inside the description.
   const haystack = `${code} ${description}`.toLowerCase();
-  const matched = Object.keys(ERROR_HELP).find(
-    (key) => haystack.includes(key) || haystack.includes(key.replaceAll('_', ' ')),
+  const matched = ERROR_HELP.find(
+    ([key]) => haystack.includes(key) || haystack.includes(key.replaceAll('_', ' ')),
   );
 
-  if (matched) return ERROR_HELP[matched];
+  if (matched) return matched[1];
   if (haystack.includes('did not provide any email')) {
     return 'The identity provider did not release an email address, so Blocks cannot match you to an account.';
   }
