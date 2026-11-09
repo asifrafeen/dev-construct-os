@@ -127,7 +127,7 @@ function OtherSignInOptions({
       <div className="mt-8 flex items-center gap-3">
         <span className="h-px flex-1 bg-border" />
         <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-          or continue with
+          more ways to sign in
         </span>
         <span className="h-px flex-1 bg-border" />
       </div>
@@ -153,7 +153,7 @@ function OtherSignInOptions({
         <Button
           type="button"
           variant="outline"
-          className={`w-full ${providers.length > 0 ? 'mt-2' : 'mt-4'}`}
+          className={`h-11 w-full rounded-xl border-[#d6e4e1] bg-white/70 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 ${providers.length > 0 ? 'mt-2' : 'mt-4'}`}
           disabled={disabled}
           onClick={onHostedLogin}
         >
@@ -430,18 +430,20 @@ export function LoginPage() {
           </ul>
         </div>
 
-        <p className="relative text-xs text-primary-foreground/60">
+        <p className="relative text-xs text-white/60">
           © {new Date().getFullYear()} SELISE · Powered by Blocks
         </p>
       </aside>
 
       {/* ── Sign-in panel ──────────────────────────────────────────────── */}
-      <main className="relative flex flex-col justify-center bg-background px-6 py-12 sm:px-12">
-        <div className="absolute right-4 top-4">
+      <main className="relative flex flex-col justify-center overflow-hidden bg-gradient-to-br from-[#f1f8f5] via-[#f8faf9] to-[#e9f0f3] px-5 py-16 dark:from-[#0d2027] dark:via-[#111b20] dark:to-[#152832] sm:px-10">
+        <div aria-hidden className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#a8d8c9]/35 blur-3xl dark:bg-[#176878]/20" />
+        <div aria-hidden className="absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-[#b9d8e9]/35 blur-3xl dark:bg-[#2b777a]/15" />
+        <div className="absolute right-5 top-5 rounded-full border border-white/70 bg-white/75 shadow-sm dark:border-white/10 dark:bg-white/5">
           <ThemeToggle />
         </div>
 
-        <div className="mx-auto w-full max-w-sm duration-500 animate-in fade-in slide-in-from-bottom-2">
+        <div className="relative mx-auto w-full max-w-md rounded-[2rem] border border-white/80 bg-white/90 p-7 shadow-[0_30px_80px_-40px_rgba(18,60,80,0.38)] backdrop-blur-sm duration-500 animate-in fade-in slide-in-from-bottom-2 dark:border-white/10 dark:bg-[#14232b]/90 sm:p-10">
           {/* The brand panel is hidden below lg, so the mark repeats here. */}
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
@@ -452,8 +454,9 @@ export function LoginPage() {
 
           {challenge ? (
             <>
-              <div className="space-y-2">
-                <h2 className="text-2xl font-semibold tracking-tight">Two-step verification</h2>
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Almost there</p>
+                <h2 className="text-3xl font-semibold tracking-tight">Two-step verification</h2>
                 <p className="text-sm text-muted-foreground">
                   We sent a verification code to {mfaDestination(challenge)}. Enter it below to
                   finish signing in
@@ -483,7 +486,7 @@ export function LoginPage() {
                     autoFocus
                     required
                     placeholder="123456"
-                    className="text-center text-lg tracking-[0.4em]"
+                    className="h-12 rounded-xl border-[#d6e4e1] bg-[#f8fbfa] text-center text-lg tracking-[0.4em] dark:border-white/10 dark:bg-white/5"
                     value={mfaCode}
                     onChange={(e) => setMfaCode(e.target.value.replaceAll(/\s/g, ''))}
                     disabled={busy || resending}
@@ -493,7 +496,7 @@ export function LoginPage() {
                 <Button
                   type="submit"
                   size="lg"
-                  className="group w-full"
+                  className="group h-12 w-full rounded-xl bg-[#176878] text-white shadow-lg shadow-[#176878]/20 hover:bg-[#125663]"
                   disabled={busy || resending || mfaCode.trim().length === 0}
                 >
                   <SubmitLabel busy={busy} busyText="Verifying…" idleText="Verify and sign in" />
@@ -543,9 +546,17 @@ export function LoginPage() {
             </>
           ) : (
             <>
-            <div className="space-y-2">
-              <h2 className="text-2xl font-semibold tracking-tight">Welcome back Chief</h2>
-              <p className="text-sm text-muted-foreground">Sign in to your Construct OS account.</p>
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+                Construct OS / Sign in
+              </p>
+              <h2 className="text-3xl font-semibold leading-tight tracking-tight">
+                Welcome back.
+                <span className="block font-serif font-normal italic text-[#176878] dark:text-[#7ac7bf]">
+                  Let&apos;s get to work.
+                </span>
+              </h2>
+              <p className="text-sm text-muted-foreground">Sign in to pick up where you left off.</p>
             </div>
 
             {sessionEnded && (
@@ -569,7 +580,7 @@ export function LoginPage() {
               </div>
             )}
 
-            <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+            <form className="mt-8 space-y-5" onSubmit={onSubmit}>
               <div className="space-y-2">
                 <label htmlFor="username" className="text-sm font-medium">
                   Email
@@ -580,6 +591,7 @@ export function LoginPage() {
                   autoComplete="username"
                   required
                   placeholder="you@company.com"
+                  className="h-12 rounded-xl border-[#d6e4e1] bg-[#f8fbfa] px-4 dark:border-white/10 dark:bg-white/5"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   disabled={busy || blocked}
@@ -604,6 +616,7 @@ export function LoginPage() {
                   autoComplete="current-password"
                   required
                   placeholder="••••••••"
+                  className="h-12 rounded-xl border-[#d6e4e1] bg-[#f8fbfa] px-4 dark:border-white/10 dark:bg-white/5"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={busy || blocked}
@@ -615,7 +628,7 @@ export function LoginPage() {
               <Button
                 type="submit"
                 size="lg"
-                className="group w-full"
+                className="group h-12 w-full rounded-xl bg-[#176878] text-white shadow-lg shadow-[#176878]/20 hover:bg-[#125663]"
                 disabled={busy || blocked || !!pendingProvider || captcha.blocking}
               >
                 <SubmitLabel busy={busy} busyText="Signing in…" idleText="Sign in" />
@@ -660,7 +673,7 @@ export function LoginPage() {
             </>
           )}
 
-          <p className="mt-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <p className="mt-8 flex items-center justify-center gap-1.5 border-t border-border/70 pt-6 text-xs text-muted-foreground">
             <Lock className="h-3.5 w-3.5" />
             Secured by SELISE Blocks
           </p>
