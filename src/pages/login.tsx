@@ -383,8 +383,8 @@ export function LoginPage() {
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
       {/* ── Brand panel (large screens only) ───────────────────────────── */}
-      <aside className="relative hidden overflow-hidden bg-gradient-to-br from-primary via-primary to-secondary p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
-        <div aria-hidden className="absolute inset-0 opacity-[0.15]" style={DOT_GRID} />
+      <aside className="relative hidden overflow-hidden bg-gradient-to-br from-[#123c50] via-[#176878] to-[#2b777a] p-12 text-white lg:flex lg:flex-col lg:justify-between">
+        <div aria-hidden className="absolute inset-0 opacity-[0.12]" style={DOT_GRID} />
         <div
           aria-hidden
           className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-white/20 blur-3xl"
@@ -402,24 +402,28 @@ export function LoginPage() {
         </div>
 
         <div className="relative max-w-md space-y-10">
-          <div className="space-y-4">
+          <div className="space-y-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Your project, connected
+            </p>
             <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-              Your workspace for everything you build.
+              <span className="block">Build together.</span>
+              <span className="block text-white/80">Run with clarity.</span>
             </h1>
-            <p className="text-base leading-relaxed text-primary-foreground/80">
-              Bring your people, data, and services together on SELISE Blocks.
+            <p className="max-w-sm text-base leading-relaxed text-white/75">
+              One workspace for your people, data, and services on SELISE Blocks.
             </p>
           </div>
 
-          <ul className="space-y-6">
+          <ul className="divide-y divide-white/15 border-t border-white/15">
             {HIGHLIGHTS.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="flex gap-4">
+              <li key={title} className="flex gap-4 py-5">
                 <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/20">
                   <Icon className="h-4 w-4" />
                 </span>
                 <div className="space-y-1">
                   <p className="font-medium leading-none">{title}</p>
-                  <p className="text-sm leading-relaxed text-primary-foreground/75">{body}</p>
+                  <p className="text-sm leading-relaxed text-white/70">{body}</p>
                 </div>
               </li>
             ))}
