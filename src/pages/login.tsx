@@ -70,8 +70,8 @@ function mfaDestination(challenge: MfaChallenge): string {
 const HIGHLIGHTS = [
   {
     icon: ShieldCheck,
-    title: 'One session, everywhere',
-    body: 'Sign in once and the HttpOnly session cookie carries every call — no token in the browser.',
+    title: 'One sign-in for your workspace',
+    body: 'Access your project tools and services from one place.',
   },
   {
     icon: Users,
@@ -404,10 +404,10 @@ export function LoginPage() {
         <div className="relative max-w-md space-y-10">
           <div className="space-y-4">
             <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-              Your project console, built on SELISE Blocks.
+              Your workspace for everything you build.
             </h1>
             <p className="text-base leading-relaxed text-primary-foreground/80">
-              Everything your team ships — identity, data, storage — behind one sign-in.
+              Bring your people, data, and services together on SELISE Blocks.
             </p>
           </div>
 
