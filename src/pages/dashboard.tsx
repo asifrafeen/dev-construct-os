@@ -118,13 +118,22 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="rounded-lg border bg-gradient-to-r from-primary/10 via-background to-background p-6">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-primary">
+          Project overview
+        </p>
         <h1 className="text-2xl font-semibold tracking-tight">
           Welcome{me?.firstName ? `, ${me.firstName}` : ''}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Signed in via Blocks SSO — the session lives in an HttpOnly cookie, not in JavaScript.
+        <p className="mt-2 text-sm text-muted-foreground">
+          Manage your workspace and explore the services connected to your project.
         </p>
+        <Link
+          to="/health"
+          className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
+        >
+          Check service health →
+        </Link>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
