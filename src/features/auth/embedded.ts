@@ -1,5 +1,5 @@
 import { BlocksError, blocksFetch } from '@/lib/blocks-client';
-import { IAM_BASE, withoutPort } from '@/lib/env';
+import { BLOCKS, IAM_BASE, withoutPort } from '@/lib/env';
 
 /**
  * Embedded ("implicit") login — the app owns the login screen.
@@ -36,16 +36,93 @@ export interface SsoProvider {
   redirectUris: string[];
 }
 
-export interface LoginOptions {
-  allowedGrantTypes: string[];
-  ssoInfo: SsoProvider[] | null;
+/** What works in one place — `password` and `social` — for this app. */
+export interface PlaceSignIn {
+  password: boolean;
+  social: boolean;
 }
 
-/** Which sign-in methods this project actually has switched on. */
-export async function getLoginOptions(): Promise<LoginOptions> {
-  const res = await blocksFetch<LoginOptions>(`${IAM_BASE}/auth/login-options`, { noRetry: true });
-  return { allowedGrantTypes: res.allowedGrantTypes ?? [], ssoInfo: res.ssoInfo ?? [] };
+/**
+ * IAM's answer for both places: `embedded` is this app's own login page, `oidc` the
+ * Blocks-hosted one behind the "SELISE Blocks" button. Each value is final — the
+ * project's switches, this app's own narrowing and, for social, an active provider.
+ */
+export interface SignInByPlace {
+  embedded: PlaceSignIn;
+  oidc: PlaceSignIn;
 }
+
+export interface LoginOptions {
+  allowedGrantTypes: string[];
+  /** Providers for the embedded place, i.e. this page's own buttons. */
+  ssoInfo: SsoProvider[] | null;
+  /** Absent on an IAM that predates it; the page then shows everything it is configured for. */
+  signIn?: SignInByPlace;
+}
+
+/**
+ * Which sign-in methods this project actually has switched on, for this app.
+ *
+ * Naming the app's OIDC client (`oidcClientId`) narrows the answer by that client's own
+ * sign-in rules and lets IAM work out `signIn.oidc` for it; the answer stays the embedded
+ * place's, so `ssoInfo` is still this page's providers. IAM refuses a client id it does not
+ * know (400 invalid_client) — a misconfigured id then costs the narrowing, not the page.
+ */
+export async function getLoginOptions(): Promise<LoginOptions> {
+  const plain = `${IAM_BASE}/auth/login-options`;
+  let res: Partial<LoginOptions>;
+  if (BLOCKS.oidcClientId) {
+    try {
+      res = await blocksFetch<LoginOptions>(
+        `${plain}?${new URLSearchParams({ oidcClientId: BLOCKS.oidcClientId })}`,
+        { noRetry: true },
+      );
+    } catch (e) {
+      if (!(e instanceof BlocksError) || e.status !== 400) throw e;
+      res = await blocksFetch<LoginOptions>(plain, { noRetry: true });
+    }
+  } else {
+    res = await blocksFetch<LoginOptions>(plain, { noRetry: true });
+  }
+  return {
+    allowedGrantTypes: res.allowedGrantTypes ?? [],
+    ssoInfo: res.ssoInfo ?? [],
+    ...(res.signIn ? { signIn: res.signIn } : {}),
+  };
+}
+
+/** What the sign-in page shows. */
+export interface SignInPlan {
+  /** The email/password form, with Forgot password and the CAPTCHA. */
+  passwordForm: boolean;
+  /** This page's own provider buttons. */
+  providers: SsoProvider[];
+  /** The "SELISE Blocks" button to the hosted login page. */
+  hostedLogin: boolean;
+}
+
+/**
+ * Decides the sign-in page from IAM's answer. `hostedConfigured` is whether this build may
+ * offer the hosted login at all (VITE_BLOCKS_HOSTED_LOGIN and an OIDC client id).
+ *
+ * Without `signIn` — options that failed to load, or an IAM that predates it — the page
+ * shows everything it is configured for, as it always did: IAM still refuses whatever the
+ * project has switched off.
+ */
+export function signInPlan(options: LoginOptions | undefined, hostedConfigured: boolean): SignInPlan {
+  const providers = options?.ssoInfo ?? [];
+  const signIn = options?.signIn;
+  if (!signIn) return { passwordForm: true, providers, hostedLogin: hostedConfigured };
+  return {
+    passwordForm: signIn.embedded.password,
+    providers: signIn.embedded.social ? providers : [],
+    hostedLogin: hostedConfigured && (signIn.oidc.password || signIn.oidc.social),
+  };
+}
+
+/** True when the plan offers no way in at all. */
+export const offersNoSignIn = (plan: SignInPlan): boolean =>
+  !plan.passwordForm && plan.providers.length === 0 && !plan.hostedLogin;
 
 /** Errors IAM returns as `{error, error_description}` with a non-2xx status. */
 export interface AuthFailure {

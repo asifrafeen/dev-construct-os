@@ -9,8 +9,10 @@ import {
   loginWithPassword,
   mfaChallenge,
   mfaChallengeFromError,
+  offersNoSignIn,
   pendingProviderName,
   restartSocialLogin,
+  signInPlan,
   signUpWithSso,
   startSocialLogin,
   submitMfaCode,
@@ -72,16 +74,83 @@ describe('SOCIAL_REDIRECT_URI', () => {
 });
 
 describe('getLoginOptions', () => {
-  it('GETs the login options without the refresh-and-retry', async () => {
+  const OPTIONS_FOR_APP = `${IAM}/auth/login-options?oidcClientId=test-client-id`;
+
+  it('GETs the options for this app’s OIDC client, without the refresh-and-retry', async () => {
     const http = mockFetch({ body: { allowedGrantTypes: ['password'], ssoInfo: [google] } });
     await expect(getLoginOptions()).resolves.toEqual({ allowedGrantTypes: ['password'], ssoInfo: [google] });
-    expect(http.last()).toMatchObject({ method: 'GET', url: `${IAM}/auth/login-options` });
+    expect(http.last()).toMatchObject({ method: 'GET', url: OPTIONS_FOR_APP });
     expect(http.last().headers['x-blocks-key']).toBe('test-project-key');
   });
 
   it('turns missing lists into empty ones', async () => {
     mockFetch({ body: { allowedGrantTypes: null, ssoInfo: null } });
     await expect(getLoginOptions()).resolves.toEqual({ allowedGrantTypes: [], ssoInfo: [] });
+  });
+
+  it('keeps what works in each place when IAM sends it', async () => {
+    const signIn = { embedded: { password: false, social: false }, oidc: { password: false, social: true } };
+    mockFetch({ body: { allowedGrantTypes: ['authorization_code'], ssoInfo: null, signIn } });
+    await expect(getLoginOptions()).resolves.toEqual({ allowedGrantTypes: ['authorization_code'], ssoInfo: [], signIn });
+  });
+
+  it('asks again without the client when IAM does not know it, rather than losing the options', async () => {
+    const http = mockFetch([
+      { status: 400, body: { error: 'invalid_client', error_description: 'unknown' } },
+      { body: { allowedGrantTypes: ['password'], ssoInfo: [google] } },
+    ]);
+    await expect(getLoginOptions()).resolves.toEqual({ allowedGrantTypes: ['password'], ssoInfo: [google] });
+    expect(http.requests.map((r) => r.url)).toEqual([OPTIONS_FOR_APP, `${IAM}/auth/login-options`]);
+  });
+
+  it('does not hide any other failure', async () => {
+    const http = mockFetch({ status: 500, body: { error: 'boom' } });
+    await expect(getLoginOptions()).rejects.toBeInstanceOf(BlocksError);
+    expect(http.requests).toHaveLength(1);
+  });
+});
+
+describe('signInPlan', () => {
+  const both = (embedded: [boolean, boolean], oidc: [boolean, boolean]) => ({
+    allowedGrantTypes: [],
+    ssoInfo: [google],
+    signIn: {
+      embedded: { password: embedded[0], social: embedded[1] },
+      oidc: { password: oidc[0], social: oidc[1] },
+    },
+  });
+
+  it.each([
+    // [case, embedded [password, social], oidc [password, social], expected form, providers, hosted]
+    ['everything on', [true, true], [true, true], true, 1, true],
+    ['embedded off: only the hosted button', [false, false], [true, true], false, 0, true],
+    ['OIDC off: form and providers, no hosted button', [true, true], [false, false], true, 1, false],
+    ['password off: providers and the hosted button', [false, true], [false, true], false, 1, true],
+    ['social off: form and the hosted button', [true, false], [true, false], true, 0, true],
+    ['nothing anywhere', [false, false], [false, false], false, 0, false],
+  ] as const)('%s', (_case, embedded, oidc, form, providerCount, hosted) => {
+    const plan = signInPlan(both([...embedded], [...oidc]), true);
+    expect(plan.passwordForm).toBe(form);
+    expect(plan.providers).toHaveLength(providerCount);
+    expect(plan.hostedLogin).toBe(hosted);
+  });
+
+  it('never offers the hosted button when this build has it off, whatever IAM says', () => {
+    expect(signInPlan(both([true, true], [true, true]), false).hostedLogin).toBe(false);
+  });
+
+  it('offers everything it is configured for when IAM did not say (older IAM or no answer)', () => {
+    expect(signInPlan({ allowedGrantTypes: [], ssoInfo: [google] }, true)).toEqual({
+      passwordForm: true,
+      providers: [google],
+      hostedLogin: true,
+    });
+    expect(signInPlan(undefined, false)).toEqual({ passwordForm: true, providers: [], hostedLogin: false });
+  });
+
+  it('reports when the plan offers no way in', () => {
+    expect(offersNoSignIn(signInPlan(both([false, false], [false, false]), true))).toBe(true);
+    expect(offersNoSignIn(signInPlan(both([false, false], [false, true]), true))).toBe(false);
   });
 });
 
@@ -320,7 +389,7 @@ describe('restartSocialLogin', () => {
 
     await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://accounts.google.com/auth'));
     expect(http.requests.map((r) => r.url)).toEqual([
-      `${IAM}/auth/login-options`,
+      `${IAM}/auth/login-options?oidcClientId=test-client-id`,
       `${IAM}/auth/social/initiate?clientId=google-client-id&redirectUri=https%3A%2F%2Fapp.example.com%2Fcallback`,
     ]);
     expect(store.get(PROVIDER_KEY)).toBe('google');

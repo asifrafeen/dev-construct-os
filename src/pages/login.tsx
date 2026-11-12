@@ -18,6 +18,8 @@ import {
   getLoginOptions,
   loginWithPassword,
   mfaChallengeFromError,
+  offersNoSignIn,
+  signInPlan,
   startSocialLogin,
   submitMfaCode,
   type MfaChallenge,
@@ -51,6 +53,10 @@ import { ThemeToggle } from '@/components/theme-toggle';
  * They are not alternatives: each one ends with IAM setting the same HttpOnly
  * session cookie, and they return on different routes (/callback vs
  * /login/callback). VITE_BLOCKS_HOSTED_LOGIN=false hides the hosted button.
+ *
+ * Which of them appear is the project's call (Blocks OS → Sign-in methods): IAM's
+ * login options say what works on this page and on the hosted one for this app, and
+ * the page shows only that — see signInPlan in features/auth/embedded.ts.
  */
 
 /** pendingProvider marker for the hosted flow — never collides with a provider name. */
@@ -106,10 +112,14 @@ function SubmitLabel({ busy, busyText, idleText }: Readonly<{ busy: boolean; bus
   );
 }
 
-/** The social providers and the hosted login, under an "or continue with" divider. */
+/**
+ * The social providers and the hosted login. Under the password form they sit below a
+ * "more ways to sign in" divider; without the form they are the sign-in, so no divider.
+ */
 function OtherSignInOptions({
   providers,
   hostedLogin,
+  afterForm,
   pendingProvider,
   disabled,
   onProvider,
@@ -117,20 +127,23 @@ function OtherSignInOptions({
 }: Readonly<{
   providers: SsoProvider[];
   hostedLogin: boolean;
+  afterForm: boolean;
   pendingProvider: string | null;
   disabled: boolean;
   onProvider: (provider: SsoProvider) => void;
   onHostedLogin: () => void;
 }>) {
   return (
-    <>
-      <div className="mt-8 flex items-center gap-3">
-        <span className="h-px flex-1 bg-border" />
-        <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-          more ways to sign in
-        </span>
-        <span className="h-px flex-1 bg-border" />
-      </div>
+    <div className={afterForm ? undefined : 'mt-4'}>
+      {afterForm && (
+        <div className="mt-8 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
+            more ways to sign in
+          </span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+      )}
 
       {providers.length > 0 && (
         <div
@@ -165,9 +178,39 @@ function OtherSignInOptions({
           </span>
         </Button>
       )}
-    </>
+    </div>
   );
 }
+
+/** Placeholder for the sign-in methods until IAM says which ones this project has on. */
+function SignInOptionsSkeleton() {
+  return (
+    <div role="status" aria-busy="true" className="mt-8 space-y-4">
+      <span className="sr-only">Loading sign-in options…</span>
+      <div aria-hidden className="space-y-4">
+        <div className="h-12 w-full rounded-xl bg-muted motion-safe:animate-pulse" />
+        <div className="h-12 w-full rounded-xl bg-muted motion-safe:animate-pulse" />
+        <div className="h-12 w-full rounded-xl bg-muted motion-safe:animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+/** IAM answered, and this project offers no way in from this app. */
+function NoSignInAvailable() {
+  return (
+    <p className="mt-8 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-400">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      Sign-in isn&apos;t available for this project right now. Contact your administrator.
+    </p>
+  );
+}
+
+/** Cache key of the login options; a refused sign-in drops it so the page re-asks IAM. */
+const LOGIN_OPTIONS_KEY = ['auth', 'login-options'] as const;
+
+/** IAM refuses a method the project has switched off since this page loaded. */
+const METHOD_TURNED_OFF = 'login_method_not_allowed';
 
 export function LoginPage() {
   const { isLoggedIn, isChecking } = useIsLoggedIn();
@@ -206,10 +249,11 @@ export function LoginPage() {
    */
   const captcha = useCaptcha();
 
-  // Which methods this project has switched on. A failure here is not fatal —
-  // the password form still renders, it just cannot list providers.
+  // Which methods this project has switched on for this app. Nothing is drawn until it
+  // answers, so a method that is off never flashes up first. A failure is not fatal —
+  // the page then offers everything it is configured for and IAM refuses what is off.
   const { data: options, isPending: loadingOptions } = useQuery({
-    queryKey: ['auth', 'login-options'],
+    queryKey: LOGIN_OPTIONS_KEY,
     queryFn: getLoginOptions,
     staleTime: 5 * 60_000,
     retry: false,
@@ -243,8 +287,16 @@ export function LoginPage() {
 
   const blocked = issues.length > 0;
   const canSignUp = emailSignupAllowed(signupSettings);
-  const providers = options?.ssoInfo ?? [];
-  const hostedLogin = BLOCKS.hostedLogin && !!BLOCKS.oidcClientId;
+  const plan = signInPlan(options, BLOCKS.hostedLogin && !!BLOCKS.oidcClientId);
+  const { providers, hostedLogin } = plan;
+  const noSignIn = offersNoSignIn(plan);
+
+  /** A method switched off since this page loaded: re-ask IAM so the page drops it. */
+  function refreshOptionsIfTurnedOff(e: unknown) {
+    if (authErrorCode(e) === METHOD_TURNED_OFF) {
+      void qc.invalidateQueries({ queryKey: LOGIN_OPTIONS_KEY });
+    }
+  }
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -266,6 +318,7 @@ export function LoginPage() {
       navigate('/', { replace: true });
     } catch (e) {
       setError(authErrorMessage(e));
+      refreshOptionsIfTurnedOff(e);
       // A solved code is single-use, so a retry needs a fresh one whatever the
       // failure was. This also picks up the site key IAM names when it is the
       // rejection reason, which is how a project that switched CAPTCHA on since
@@ -367,6 +420,7 @@ export function LoginPage() {
     startSocialLogin(provider).catch((e) => {
       setError(authErrorMessage(e));
       setPendingProvider(null);
+      refreshOptionsIfTurnedOff(e);
     });
   }
 
@@ -580,6 +634,11 @@ export function LoginPage() {
               </div>
             )}
 
+            {loadingOptions ? (
+              <SignInOptionsSkeleton />
+            ) : (
+            <>
+            {plan.passwordForm && (
             <form className="mt-8 space-y-5" onSubmit={onSubmit}>
               <div className="space-y-2">
                 <label htmlFor="username" className="text-sm font-medium">
@@ -634,8 +693,9 @@ export function LoginPage() {
                 <SubmitLabel busy={busy} busyText="Signing in…" idleText="Sign in" />
               </Button>
             </form>
+            )}
 
-            {(error ?? captcha.loadError) != null && (
+            {(error ?? (plan.passwordForm ? captcha.loadError : null)) != null && (
               <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
                 {error ?? captcha.loadError}
               </p>
@@ -645,6 +705,7 @@ export function LoginPage() {
               <OtherSignInOptions
                 providers={providers}
                 hostedLogin={hostedLogin}
+                afterForm={plan.passwordForm}
                 pendingProvider={pendingProvider}
                 disabled={busy || blocked || !!pendingProvider}
                 onProvider={onProvider}
@@ -652,11 +713,8 @@ export function LoginPage() {
               />
             )}
 
-            {loadingOptions && (
-              <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading sign-in options…
-              </p>
+            {noSignIn && <NoSignInAvailable />}
+            </>
             )}
 
             {canSignUp && (
