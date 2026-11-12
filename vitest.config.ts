@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
  * Unit tests run in plain Node (it has fetch, Response, FormData and URL) against
  * fixed config, so they never depend on a developer's .env.
  *
- * `npm run test:coverage` writes coverage/lcov.info, which is committed: the Blocks
- * Release pipeline runs the SonarQube scan on the checkout without running tests,
- * so the report has to be in the repo (see sonar-project.properties).
+ * The Blocks Release pipeline runs `npm run blocks:test` before its SonarQube scan, so
+ * the scan reads coverage/lcov.info from that run (see sonar-project.properties). The
+ * report is not committed.
  */
 export default defineConfig({
   resolve: {

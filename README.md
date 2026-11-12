@@ -218,10 +218,11 @@ Release can map a branch to (`dev`, `test`, `stg`, `iat`, `uat`, `prodshadow`, `
 ## Tests and coverage
 
 `npm test` runs the Vitest unit tests (plain Node, fixed config from `vitest.config.ts`, so
-no `.env` needed). `npm run test:coverage` also writes `coverage/lcov.info`, which is
-committed: the Release pipeline runs the SonarQube scan on the checkout without running
-tests, and `sonar-project.properties` points it at that file. Regenerate and commit it
-whenever `src/` changes, or the quality gate's coverage condition reads stale numbers.
+no `.env` needed). `npm run test:coverage` also writes `coverage/lcov.info`.
+
+In the Release pipeline, the unit-test step runs `npm run blocks:test` before the SonarQube
+scan. That script writes `coverage/lcov.info` even when a test fails, and
+`sonar-project.properties` points the scan at it. The report is not committed.
 
 ## Deploying
 

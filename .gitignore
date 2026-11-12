@@ -15,6 +15,9 @@ dist-ssr
 # Build info
 tsconfig.tsbuildinfo
 
+# Coverage report: written in the pipeline by `npm run blocks:test`, never committed.
+coverage
+
 # Local env: contains this deployment's project key / client id.
 # .env.example documents the shape; see README for the values each needs.
 .env
