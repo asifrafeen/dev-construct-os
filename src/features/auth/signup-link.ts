@@ -96,12 +96,12 @@ export interface RedeemSignupLinkResponse {
  * Returns '' when there is no code, which the page renders as an invalid link.
  */
 export function readLinkCode(): string {
-  const hash = window.location.hash.replace(/^#/, '');
+  const hash = globalThis.location.hash.replace(/^#/, '');
   if (!hash) return '';
 
   const code = new URLSearchParams(hash).get('link') ?? '';
   if (code) {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    globalThis.history.replaceState(null, '', globalThis.location.pathname + globalThis.location.search);
   }
   return code;
 }

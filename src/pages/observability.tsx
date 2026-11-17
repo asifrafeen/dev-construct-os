@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { RefreshCw, Search } from 'lucide-react';
 import { lmt, type Span } from '@/features/os/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/form';
 import { JsonView, PageHeader, Pager, Tabs } from '@/components/ui/layout';
@@ -67,7 +67,11 @@ export function ObservabilityPage() {
 type Svc = { key?: string; label?: string; apiServiceName?: string };
 const svcName = (s: Svc) => s.apiServiceName ?? s.key ?? s.label ?? '';
 
-function TracesTab({ services, openTraceId, onOpen }: { services: Svc[]; openTraceId: string | null; onOpen: (id: string | null) => void }) {
+function TracesTab({
+  services,
+  openTraceId,
+  onOpen,
+}: Readonly<{ services: Svc[]; openTraceId: string | null; onOpen: (id: string | null) => void }>) {
   const [service, setService] = useState('');
   const [minutes, setMinutes] = useState(60);
   const [statusClass, setStatusClass] = useState('');
@@ -88,6 +92,11 @@ function TracesTab({ services, openTraceId, onOpen }: { services: Svc[]; openTra
     retry: false,
   });
   const total = traces.data?.totalCount ?? 0;
+  const rows = traces.data?.data ?? [];
+  let listStatus: ReactNode = null;
+  if (traces.isPending) listStatus = <Spinner />;
+  else if (traces.isError) listStatus = <ErrorNote error={traces.error} />;
+  else if (rows.length === 0) listStatus = <EmptyState title="No traces in this window" />;
 
   return (
     <div className="space-y-4">
@@ -137,21 +146,11 @@ function TracesTab({ services, openTraceId, onOpen }: { services: Svc[]; openTra
 
       <Card>
         <CardContent className="p-0">
-          {traces.isPending ? (
-            <div className="p-5">
-              <Spinner />
-            </div>
-          ) : traces.isError ? (
-            <div className="p-5">
-              <ErrorNote error={traces.error} />
-            </div>
-          ) : !traces.data?.data?.length ? (
-            <div className="p-5">
-              <EmptyState title="No traces in this window" />
-            </div>
+          {listStatus ? (
+            <div className="p-5">{listStatus}</div>
           ) : (
             <ul className="divide-y text-sm">
-              {traces.data.data.map((t) => (
+              {rows.map((t) => (
                 <li key={`${t.traceId}-${t.startTime}`}>
                   <button
                     className={cn('flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-accent/40', openTraceId === t.traceId && 'bg-accent')}
@@ -182,7 +181,7 @@ function fmtDuration(d?: number) {
   return d >= 1000 ? `${(d / 1000).toFixed(2)} s` : `${Math.round(d)} ms`;
 }
 
-function TraceDetail({ traceId, onClose }: { traceId: string; onClose: () => void }) {
+function TraceDetail({ traceId, onClose }: Readonly<{ traceId: string; onClose: () => void }>) {
   const q = useQuery({ queryKey: ['lmt', 'trace', traceId], queryFn: () => lmt.trace(traceId), retry: false });
   const spans: Span[] = useMemo(() => (Array.isArray(q.data) ? q.data : (q.data?.data ?? [])), [q.data]);
   const [selected, setSelected] = useState<Span | null>(null);
@@ -213,13 +212,11 @@ function TraceDetail({ traceId, onClose }: { traceId: string; onClose: () => voi
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        {q.isPending ? (
-          <Spinner />
-        ) : q.isError ? (
-          <ErrorNote error={q.error} />
-        ) : !spans.length ? (
-          <EmptyState title="Trace not found" description="It may be outside retention, or belong to another tenant." />
-        ) : (
+        <QueryState
+          query={q}
+          empty={spans.length === 0}
+          emptyState={<EmptyState title="Trace not found" description="It may be outside retention, or belong to another tenant." />}
+        >
           <div className="space-y-1">
             {ordered.map((s) => {
               const start = new Date(s.startTime ?? 0).getTime() - t0;
@@ -240,12 +237,14 @@ function TraceDetail({ traceId, onClose }: { traceId: string; onClose: () => voi
               );
             })}
           </div>
-        )}
+        </QueryState>
         {selected && <JsonView value={selected} maxHeight="max-h-64" />}
         {serviceForLogs && (
           <div>
             <p className="mb-1 text-sm font-medium">Logs for this trace ({serviceForLogs})</p>
-            {logs.isPending ? <Spinner /> : logs.isError ? <ErrorNote error={logs.error} /> : <LogList rows={logs.data?.data ?? []} />}
+            <QueryState query={logs}>
+              <LogList rows={logs.data?.data ?? []} />
+            </QueryState>
           </div>
         )}
       </CardContent>
@@ -253,14 +252,24 @@ function TraceDetail({ traceId, onClose }: { traceId: string; onClose: () => voi
   );
 }
 
-function LogList({ rows }: { rows: { timestamp?: string; level?: string; message?: string; traceId?: string; actionName?: string; exception?: string }[] }) {
+function levelClass(level?: string) {
+  if (/err/i.test(level ?? '')) return 'text-destructive';
+  if (/warn/i.test(level ?? '')) return 'text-amber-600';
+  return 'text-primary';
+}
+
+function LogList({
+  rows,
+}: Readonly<{
+  rows: { timestamp?: string; level?: string; message?: string; traceId?: string; actionName?: string; exception?: string }[];
+}>) {
   if (!rows.length) return <p className="text-sm text-muted-foreground">No log lines.</p>;
   return (
     <div className="max-h-[50vh] space-y-0.5 overflow-y-auto rounded-md bg-muted p-2 font-mono text-[11px]">
-      {rows.map((l, i) => (
-        <div key={i}>
+      {rows.map((l) => (
+        <div key={`${l.timestamp}-${l.level}-${l.traceId}-${l.actionName}-${l.message}`}>
           <span className="text-muted-foreground">{l.timestamp?.replace('T', ' ').slice(0, 23)}</span>{' '}
-          <span className={cn(/err/i.test(l.level ?? '') ? 'text-destructive' : /warn/i.test(l.level ?? '') ? 'text-amber-600' : 'text-primary')}>
+          <span className={levelClass(l.level)}>
             {l.level}
           </span>{' '}
           {l.actionName && <span className="text-muted-foreground">[{l.actionName}] </span>}
@@ -272,7 +281,7 @@ function LogList({ rows }: { rows: { timestamp?: string; level?: string; message
   );
 }
 
-function LogsTab({ services }: { services: Svc[] }) {
+function LogsTab({ services }: Readonly<{ services: Svc[] }>) {
   const [service, setService] = useState('');
   const [level, setLevel] = useState('');
   const [minutes, setMinutes] = useState(60);
@@ -326,14 +335,12 @@ function LogsTab({ services }: { services: Svc[] }) {
       </Card>
       <Card>
         <CardContent className="p-4">
-          {!effective ? (
-            <EmptyState title="No services" description="GetBlocksServices returned nothing to read logs from." />
-          ) : logs.isPending ? (
-            <Spinner />
-          ) : logs.isError ? (
-            <ErrorNote error={logs.error} />
+          {effective ? (
+            <QueryState query={logs}>
+              <LogList rows={logs.data?.data ?? []} />
+            </QueryState>
           ) : (
-            <LogList rows={logs.data?.data ?? []} />
+            <EmptyState title="No services" description="GetBlocksServices returned nothing to read logs from." />
           )}
           <Pager zeroBased page={page} pageCount={Math.ceil(total / pageSize)} total={total} onChange={setPage} />
         </CardContent>
@@ -342,7 +349,7 @@ function LogsTab({ services }: { services: Svc[] }) {
   );
 }
 
-function AnalyticsTab({ services }: { services: Svc[] }) {
+function AnalyticsTab({ services }: Readonly<{ services: Svc[] }>) {
   const [service, setService] = useState('');
   const [minutes, setMinutes] = useState(1440);
   const run = useMutation({

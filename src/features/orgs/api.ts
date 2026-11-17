@@ -250,6 +250,10 @@ export const orgs = {
    * Membership is enforced server-side against the user's organizations, roles and
    * permissions; anything else is refused with `organization_not_available`.
    *
+   * A 200 is not proof the organization changed: IAM can mint the token for a different
+   * one (a multi-org project never honours "default" here). `useSwitchOrg` verifies the
+   * outcome against `/iam/me`; call this directly only if you do the same.
+   *
    * Deliberately NOT `noRetry`. A refresh token inside its rotation grace window is
    * refused here with `session_expired` — IAM will not switch on a superseded token,
    * because the access half would carry the new organization while the refresh half

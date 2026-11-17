@@ -3,12 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff, Lock, LockOpen, Plus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { secrets, type Secret } from '@/features/os/api';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal, Field } from '@/components/ui/modal';
 import { Checkbox, Select, Textarea, splitList } from '@/components/ui/form';
 import { CopyButton, JsonView, PageHeader } from '@/components/ui/layout';
 import { formatDate } from '@/lib/utils';
+
+function statusTone(status: Secret['status']) {
+  if (status === 'active') return 'success';
+  if (status === 'deleted') return 'danger';
+  return 'muted';
+}
 
 /**
  * The project secret store (Blocks OS → Secrets & Configs), driven as the signed-in user.
@@ -36,6 +42,7 @@ export function SecretsPage() {
     mutationFn: ({ id, op }: { id: string; op: 'lock' | 'unlock' | 'restore' | 'remove' }) => secrets[op](id),
     onSuccess: refresh,
   });
+  const items = list.data?.data ?? [];
 
   return (
     <div className="space-y-6">
@@ -60,16 +67,11 @@ export function SecretsPage() {
           <Checkbox label="Include deleted" checked={includeDeleted} onChange={setIncludeDeleted} />
         </CardHeader>
         <CardContent>
-          {[reveal, act].map((m, i) => m.isError && <ErrorNote key={i} error={m.error} />)}
-          {list.isPending ? (
-            <Spinner />
-          ) : list.isError ? (
-            <ErrorNote error={list.error} />
-          ) : !list.data?.data?.length ? (
-            <EmptyState title="No secrets" />
-          ) : (
+          {reveal.isError && <ErrorNote error={reveal.error} />}
+          {act.isError && <ErrorNote error={act.error} />}
+          <QueryState query={list} empty={items.length === 0} emptyState={<EmptyState title="No secrets" />}>
             <ul className="divide-y text-sm">
-              {list.data.data.map((s) => {
+              {items.map((s) => {
                 const shown = revealed[s.secretId];
                 return (
                   <li key={s.secretId} className="space-y-1 py-3">
@@ -77,7 +79,7 @@ export function SecretsPage() {
                       <div className="min-w-0">
                         <p className="font-medium">
                           {s.name}{' '}
-                          <Badge tone={s.status === 'active' ? 'success' : s.status === 'deleted' ? 'danger' : 'muted'}>{s.status}</Badge>{' '}
+                          <Badge tone={statusTone(s.status)}>{s.status}</Badge>{' '}
                           <Badge tone="muted">{s.type}</Badge>
                           {s.canReadValue === false && <Badge tone="muted" className="ml-1">no read access</Badge>}
                         </p>
@@ -93,15 +95,15 @@ export function SecretsPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          title={shown !== undefined ? 'Hide' : 'Read value'}
+                          title={shown === undefined ? 'Read value' : 'Hide'}
                           disabled={reveal.isPending}
                           onClick={() =>
-                            shown !== undefined
-                              ? setRevealed(({ [s.secretId]: _drop, ...rest }) => rest)
-                              : reveal.mutate(s.secretId)
+                            shown === undefined
+                              ? reveal.mutate(s.secretId)
+                              : setRevealed(({ [s.secretId]: _drop, ...rest }) => rest)
                           }
                         >
-                          {shown !== undefined ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          {shown === undefined ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                         </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" title="Rotate" onClick={() => setRotating(s)}>
                           <RotateCw className="h-3.5 w-3.5" />
@@ -139,7 +141,7 @@ export function SecretsPage() {
                 );
               })}
             </ul>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
       {creating && <CreateSecretModal onClose={() => setCreating(false)} onDone={() => { setCreating(false); void refresh(); }} />}
@@ -149,7 +151,7 @@ export function SecretsPage() {
   );
 }
 
-function CreateSecretModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function CreateSecretModal({ onClose, onDone }: Readonly<{ onClose: () => void; onDone: () => void }>) {
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [description, setDescription] = useState('');
@@ -201,7 +203,7 @@ function CreateSecretModal({ onClose, onDone }: { onClose: () => void; onDone: (
   );
 }
 
-function RotateModal({ secret, onClose, onDone }: { secret: Secret; onClose: () => void; onDone: () => void }) {
+function RotateModal({ secret, onClose, onDone }: Readonly<{ secret: Secret; onClose: () => void; onDone: () => void }>) {
   const [value, setValue] = useState('');
   const rotate = useMutation({ mutationFn: () => secrets.rotate(secret.secretId, value), onSuccess: onDone });
   return (
@@ -212,11 +214,13 @@ function RotateModal({ secret, onClose, onDone }: { secret: Secret; onClose: () 
   );
 }
 
-function AuditModal({ secret, onClose }: { secret: Secret | null; onClose: () => void }) {
+function AuditModal({ secret, onClose }: Readonly<{ secret: Secret | null; onClose: () => void }>) {
   const audit = useQuery({ queryKey: ['os', 'secrets', 'audit', secret?.secretId ?? 'all'], queryFn: () => secrets.audit(secret?.secretId), retry: false });
   return (
     <Modal open onClose={onClose} title={secret ? `Audit — ${secret.name}` : 'Secret audit log'} className="max-w-3xl">
-      {audit.isPending ? <Spinner /> : audit.isError ? <ErrorNote error={audit.error} /> : <JsonView value={audit.data} maxHeight="max-h-[60vh]" />}
+      <QueryState query={audit}>
+        <JsonView value={audit.data} maxHeight="max-h-[60vh]" />
+      </QueryState>
     </Modal>
   );
 }

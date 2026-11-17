@@ -23,7 +23,7 @@ export interface SchemaField {
   isPIIData?: boolean;
   isUniqueData?: boolean;
   description?: string;
-  requiredOn?: 'None' | 'Insert' | 'Update' | 'Both' | string;
+  requiredOn?: string;
   fields?: SchemaField[];
   validationRule?: unknown;
   totalValidationRules?: number;
@@ -120,11 +120,12 @@ export interface ListArgs {
 /** Operations for one Entity schema, named exactly as the gateway generates them. */
 export function recordsApi(s: SchemaDefinition) {
   const X = s.schemaName;
-  const list = `get${s.querySchema || `${X}s`}`;
+  const queryName = s.querySchema || `${X}s`;
+  const list = `get${queryName}`;
   const selection = selectionFor(s.fields) || 'ItemId';
 
   const mutate = (op: string, args: string, vars: Record<string, unknown>, fields = 'acknowledged itemId totalImpactedData message') =>
-    gql<Record<string, ActionResponse & { itemIds?: string[] }>>(`mutation(${args}){ ${op}(${args.replace(/\$(\w+):[^,]+/g, '$1:$$$1')}){ ${fields} } }`, vars).then(
+    gql<Record<string, ActionResponse & { itemIds?: string[] }>>(`mutation(${args}){ ${op}(${args.replaceAll(/\$(\w+):[^,]+/g, '$1:$$$1')}){ ${fields} } }`, vars).then(
       (d) => d[op],
     );
 

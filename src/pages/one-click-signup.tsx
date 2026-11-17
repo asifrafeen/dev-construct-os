@@ -11,7 +11,7 @@ import { useGenerateSignupLink, useSignupLinkConfigurations } from '@/features/s
 import { useRoles } from '@/features/roles/hooks';
 import { BlocksError } from '@/lib/blocks-client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Field, Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/utils';
@@ -23,6 +23,14 @@ function redemptionsLabel(max?: number | null) {
   if (max === 0) return 'Unlimited';
   if (max == null || max === 1) return 'Single use';
   return `${max} uses`;
+}
+
+/** No whitespace, an `@` after the first character, then a `.` with at least one character on each side. */
+function looksLikeEmail(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  const at = value.indexOf('@', 1);
+  const dot = value.lastIndexOf('.', value.length - 2);
+  return at !== -1 && dot >= at + 2;
 }
 
 /**
@@ -77,16 +85,16 @@ export function OneClickSignupPage() {
         </CardHeader>
 
         <CardContent>
-          {isPending ? (
-            <Spinner />
-          ) : isError ? (
-            <ErrorNote error={error} />
-          ) : configurations.length === 0 ? (
-            <EmptyState
-              title="No configurations"
-              description="Create a signup link configuration in IAM first — every link is cut from one."
-            />
-          ) : (
+          <QueryState
+            query={{ isPending, isError, error }}
+            empty={configurations.length === 0}
+            emptyState={
+              <EmptyState
+                title="No configurations"
+                description="Create a signup link configuration in IAM first — every link is cut from one."
+              />
+            }
+          >
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -140,7 +148,7 @@ export function OneClickSignupPage() {
                 </tbody>
               </table>
             </div>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
 
@@ -198,7 +206,7 @@ function InviteUserModal({
   initialConfigurationId,
   onClose,
   onGenerated,
-}: {
+}: Readonly<{
   configurations: SignupLinkConfiguration[];
   loadingConfigurations: boolean;
   initialConfigurationId: string;
@@ -208,7 +216,7 @@ function InviteUserModal({
     email: string,
     configuration: SignupLinkConfiguration | undefined,
   ) => void;
-}) {
+}>) {
   const generate = useGenerateSignupLink();
   const orgRoles = useRoles({ pageSize: 200 });
 
@@ -256,7 +264,7 @@ function InviteUserModal({
 
   const canSubmit =
     !!configurationId &&
-    /^\S+@\S+\.\S+$/.test(email.trim()) &&
+    looksLikeEmail(email.trim()) &&
     !!firstName.trim() &&
     !!lastName.trim() &&
     !forwardedToInvalid &&
@@ -281,8 +289,8 @@ function InviteUserModal({
         roles: form.roles,
         permissions,
         ...(forwardedTo ? { forwardedTo } : {}),
-        ...(expires !== undefined ? { expiresInMinutes: expires } : {}),
-        ...(maxRedemptions !== undefined ? { maxRedemptions } : {}),
+        ...(expires === undefined ? {} : { expiresInMinutes: expires }),
+        ...(maxRedemptions === undefined ? {} : { maxRedemptions }),
       },
       { onSuccess: (link) => onGenerated(link, trimmedEmail, configuration) },
     );
@@ -386,29 +394,12 @@ function InviteUserModal({
               label="Roles"
               hint="Pre-selected from the configuration. Leaving none selected falls back to the configuration's defaults."
             >
-              {orgRoles.isPending ? (
-                <Spinner label="Loading roles…" />
-              ) : roleOptions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No roles in this organization.</p>
-              ) : (
-                <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-                  {roleOptions.map((r) => (
-                    <label
-                      key={r.slug}
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-accent"
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={form.roles.includes(r.slug)}
-                        onChange={() => toggleRole(r.slug)}
-                      />
-                      <span>{r.name}</span>
-                      <code className="text-xs text-muted-foreground">{r.slug}</code>
-                    </label>
-                  ))}
-                </div>
-              )}
+              <RolePicker
+                pending={orgRoles.isPending}
+                options={roleOptions}
+                selected={form.roles}
+                onToggle={toggleRole}
+              />
             </Field>
 
             <Field
@@ -472,19 +463,53 @@ function InviteUserModal({
   );
 }
 
+function RolePicker({
+  pending,
+  options,
+  selected,
+  onToggle,
+}: Readonly<{
+  pending: boolean;
+  options: { slug: string; name: string }[];
+  selected: string[];
+  onToggle: (slug: string) => void;
+}>) {
+  if (pending) return <Spinner label="Loading roles…" />;
+  if (options.length === 0) return <p className="text-sm text-muted-foreground">No roles in this organization.</p>;
+  return (
+    <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+      {options.map((r) => (
+        <label
+          key={r.slug}
+          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-accent"
+        >
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={selected.includes(r.slug)}
+            onChange={() => onToggle(r.slug)}
+          />
+          <span>{r.name}</span>
+          <code className="text-xs text-muted-foreground">{r.slug}</code>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function GeneratedLinkModal({
   link,
   email,
   configuration,
   onClose,
   onInviteAnother,
-}: {
+}: Readonly<{
   link: GeneratedSignupLink;
   email: string;
   configuration?: SignupLinkConfiguration;
   onClose: () => void;
   onInviteAnother: () => void;
-}) {
+}>) {
   const url = inviteUrl(link);
   const [copied, setCopied] = useState(false);
 

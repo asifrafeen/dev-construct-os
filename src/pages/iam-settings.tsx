@@ -13,12 +13,12 @@ import {
 } from '@/features/iam-settings/api';
 import { useActiveOrg } from '@/features/orgs/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal, Field } from '@/components/ui/modal';
 import { Checkbox, splitList } from '@/components/ui/form';
 import { JsonView, PageHeader, Tabs } from '@/components/ui/layout';
-import { formatDate } from '@/lib/utils';
+import { formatDate, toText } from '@/lib/utils';
 
 type Tab = 'signup' | 'orgs' | 'mfa' | 'credentials' | 'providers' | 'config';
 
@@ -85,29 +85,27 @@ function SignupTab() {
         <CardDescription>GET /iam/v4/iam/signup-settings/admin · POST /iam/v4/iam/signup-settings (mutate-tenant-configs)</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {q.isPending ? (
-          <Spinner />
-        ) : q.isError ? (
-          <ErrorNote error={q.error} />
-        ) : s ? (
-          <>
-            <Checkbox label="Email + password sign-up" checked={s.isEmailPasswordSignUpEnabled} onChange={(v) => setS({ ...s, isEmailPasswordSignUpEnabled: v })} />
-            <Checkbox label="SSO sign-up (social / hosted)" checked={s.isSSoSignUpEnabled} onChange={(v) => setS({ ...s, isSSoSignUpEnabled: v })} />
-            <Field label="Default roles for new users" hint="Role slugs, comma separated.">
-              <Input value={roles} onChange={(e) => setRoles(e.target.value)} />
-            </Field>
-            <Field label="Default permissions for new users">
-              <Input value={perms} onChange={(e) => setPerms(e.target.value)} />
-            </Field>
-            <div className="flex items-center gap-3">
-              <Button disabled={save.isPending} onClick={() => save.mutate()}>
-                Save
-              </Button>
-              <Saved ok={save.isSuccess} />
-            </div>
-            {save.isError && <ErrorNote error={save.error} />}
-          </>
-        ) : null}
+        <QueryState query={q}>
+          {s && (
+            <>
+              <Checkbox label="Email + password sign-up" checked={s.isEmailPasswordSignUpEnabled} onChange={(v) => setS({ ...s, isEmailPasswordSignUpEnabled: v })} />
+              <Checkbox label="SSO sign-up (social / hosted)" checked={s.isSSoSignUpEnabled} onChange={(v) => setS({ ...s, isSSoSignUpEnabled: v })} />
+              <Field label="Default roles for new users" hint="Role slugs, comma separated.">
+                <Input value={roles} onChange={(e) => setRoles(e.target.value)} />
+              </Field>
+              <Field label="Default permissions for new users">
+                <Input value={perms} onChange={(e) => setPerms(e.target.value)} />
+              </Field>
+              <div className="flex items-center gap-3">
+                <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                  Save
+                </Button>
+                <Saved ok={save.isSuccess} />
+              </div>
+              {save.isError && <ErrorNote error={save.error} />}
+            </>
+          )}
+        </QueryState>
       </CardContent>
     </Card>
   );
@@ -138,34 +136,28 @@ function OrgConfigTab() {
         <CardDescription>GET /iam/v4/iam/organizations/config/admin · POST /iam/v4/iam/organizations/config</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {q.isPending ? (
-          <Spinner />
-        ) : q.isError ? (
-          <ErrorNote error={q.error} />
-        ) : (
-          <>
-            {flags.map(([k, label, hint]) => (
-              <Checkbox key={k} label={label} hint={hint} checked={!!cfg[k]} onChange={(v) => setCfg({ ...cfg, [k]: v })} />
-            ))}
-            <Field label="Auto-join organization id">
-              <Input
-                value={cfg.signupAutoJoinOrganizationId ?? ''}
-                onChange={(e) => setCfg({ ...cfg, signupAutoJoinOrganizationId: e.target.value || null })}
-              />
-            </Field>
-            <div className="flex items-center gap-3">
-              <Button disabled={save.isPending} onClick={() => save.mutate()}>
-                Save
-              </Button>
-              <Saved ok={save.isSuccess} />
-            </div>
-            {save.isError && <ErrorNote error={save.error} />}
-            <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">Raw response</summary>
-              <JsonView value={q.data} />
-            </details>
-          </>
-        )}
+        <QueryState query={q}>
+          {flags.map(([k, label, hint]) => (
+            <Checkbox key={k} label={label} hint={hint} checked={!!cfg[k]} onChange={(v) => setCfg({ ...cfg, [k]: v })} />
+          ))}
+          <Field label="Auto-join organization id">
+            <Input
+              value={cfg.signupAutoJoinOrganizationId ?? ''}
+              onChange={(e) => setCfg({ ...cfg, signupAutoJoinOrganizationId: e.target.value || null })}
+            />
+          </Field>
+          <div className="flex items-center gap-3">
+            <Button disabled={save.isPending} onClick={() => save.mutate()}>
+              Save
+            </Button>
+            <Saved ok={save.isSuccess} />
+          </div>
+          {save.isError && <ErrorNote error={save.error} />}
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted-foreground">Raw response</summary>
+            <JsonView value={q.data} />
+          </details>
+        </QueryState>
       </CardContent>
     </Card>
   );
@@ -212,54 +204,52 @@ function MfaPolicyTab() {
         <CardDescription>GET/POST /iam/v4/mfa/config (mfa-configs / mutate-mfa-configs)</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {q.isPending ? (
-          <Spinner />
-        ) : q.isError ? (
-          <ErrorNote error={q.error} />
-        ) : p ? (
-          <>
-            <Checkbox label="MFA enabled for the project" checked={p.enableMfa} onChange={(v) => setP({ ...p, enableMfa: v })} />
-            <div>
-              <p className="mb-1 text-sm font-medium">Allowed methods</p>
-              <div className="flex flex-wrap gap-4">
-                {MFA_METHODS.map(([n, label]) => (
-                  <Checkbox
-                    key={n}
-                    label={label}
-                    checked={p.userMfaType.includes(n)}
-                    onChange={(v) => setP({ ...p, userMfaType: v ? [...p.userMfaType, n] : p.userMfaType.filter((x) => x !== n) })}
-                  />
-                ))}
+        <QueryState query={q}>
+          {p && (
+            <>
+              <Checkbox label="MFA enabled for the project" checked={p.enableMfa} onChange={(v) => setP({ ...p, enableMfa: v })} />
+              <div>
+                <p className="mb-1 text-sm font-medium">Allowed methods</p>
+                <div className="flex flex-wrap gap-4">
+                  {MFA_METHODS.map(([n, label]) => (
+                    <Checkbox
+                      key={n}
+                      label={label}
+                      checked={p.userMfaType.includes(n)}
+                      onChange={(v) => setP({ ...p, userMfaType: v ? [...p.userMfaType, n] : p.userMfaType.filter((x) => x !== n) })}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-            <Checkbox label="Require MFA for all users" checked={p.requireMfaForAllUsers} onChange={(v) => setP({ ...p, requireMfaForAllUsers: v })} />
-            <Checkbox label="Allow users to opt out" checked={p.allowUserOptOut} onChange={(v) => setP({ ...p, allowUserOptOut: v })} />
-            <Checkbox
-              label="Allow backup codes"
-              hint="Policy only — this IAM build has no backup-code endpoints yet."
-              checked={p.allowBackupCodes}
-              onChange={(v) => setP({ ...p, allowBackupCodes: v })}
-            />
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Backup codes count">
-                <Input type="number" value={p.backupCodesCount} onChange={(e) => setP({ ...p, backupCodesCount: Number(e.target.value) })} />
-              </Field>
-              <Field label="Roles that must use MFA">
-                <Input value={required} onChange={(e) => setRequired(e.target.value)} />
-              </Field>
-              <Field label="Roles exempt from MFA">
-                <Input value={exempt} onChange={(e) => setExempt(e.target.value)} />
-              </Field>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button disabled={save.isPending} onClick={() => save.mutate()}>
-                Save
-              </Button>
-              <Saved ok={save.isSuccess} />
-            </div>
-            {save.isError && <ErrorNote error={save.error} />}
-          </>
-        ) : null}
+              <Checkbox label="Require MFA for all users" checked={p.requireMfaForAllUsers} onChange={(v) => setP({ ...p, requireMfaForAllUsers: v })} />
+              <Checkbox label="Allow users to opt out" checked={p.allowUserOptOut} onChange={(v) => setP({ ...p, allowUserOptOut: v })} />
+              <Checkbox
+                label="Allow backup codes"
+                hint="Policy only — this IAM build has no backup-code endpoints yet."
+                checked={p.allowBackupCodes}
+                onChange={(v) => setP({ ...p, allowBackupCodes: v })}
+              />
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Field label="Backup codes count">
+                  <Input type="number" value={p.backupCodesCount} onChange={(e) => setP({ ...p, backupCodesCount: Number(e.target.value) })} />
+                </Field>
+                <Field label="Roles that must use MFA">
+                  <Input value={required} onChange={(e) => setRequired(e.target.value)} />
+                </Field>
+                <Field label="Roles exempt from MFA">
+                  <Input value={exempt} onChange={(e) => setExempt(e.target.value)} />
+                </Field>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                  Save
+                </Button>
+                <Saved ok={save.isSuccess} />
+              </div>
+              {save.isError && <ErrorNote error={save.error} />}
+            </>
+          )}
+        </QueryState>
       </CardContent>
     </Card>
   );
@@ -289,7 +279,8 @@ function CredentialsTab() {
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
-        {[rotate, del].map((m, i) => m.isError && <ErrorNote key={i} error={m.error} />)}
+        {rotate.isError && <ErrorNote error={rotate.error} />}
+        {del.isError && <ErrorNote error={del.error} />}
         {secret !== null && (
           <div className="space-y-1 rounded-md border border-amber-500/40 p-3">
             <p className="text-sm font-medium text-amber-600">New secret — shown once. Copy it now.</p>
@@ -299,13 +290,7 @@ function CredentialsTab() {
             </Button>
           </div>
         )}
-        {q.isPending ? (
-          <Spinner />
-        ) : q.isError ? (
-          <ErrorNote error={q.error} />
-        ) : !rows.length ? (
-          <EmptyState title="No client credentials" />
-        ) : (
+        <QueryState query={q} empty={rows.length === 0} emptyState={<EmptyState title="No client credentials" />}>
           <ul className="divide-y text-sm">
             {rows.map((c) => (
               <li key={c.itemId} className="flex items-center justify-between gap-2 py-2">
@@ -332,7 +317,7 @@ function CredentialsTab() {
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
       {editing && (
         <CredentialModal
@@ -353,11 +338,11 @@ function CredentialModal({
   credential,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   credential: ClientCredential | null;
   onClose: () => void;
   onSaved: (r: Record<string, unknown>) => void;
-}) {
+}>) {
   const { activeOrgId } = useActiveOrg();
   const [name, setName] = useState(credential?.name ?? '');
   const [active, setActive] = useState(credential?.isActive ?? true);
@@ -421,22 +406,16 @@ function ProvidersTab() {
         </CardHeader>
         <CardContent className="space-y-2">
           {toggle.isError && <ErrorNote error={toggle.error} />}
-          {q.isPending ? (
-            <Spinner />
-          ) : q.isError ? (
-            <ErrorNote error={q.error} />
-          ) : !rows.length ? (
-            <EmptyState title="No identity providers" />
-          ) : (
+          <QueryState query={q} empty={rows.length === 0} emptyState={<EmptyState title="No identity providers" />}>
             <ul className="divide-y text-sm">
               {rows.map((p) => {
-                const id = String(p.itemId ?? p.id ?? '');
+                const id = toText(p.itemId ?? p.id);
                 const on = !!(p.isActive ?? p.active);
                 return (
                   <li key={id} className="flex items-center justify-between gap-2 py-2">
                     <span>
-                      <span className="font-medium">{String(p.name ?? p.provider ?? p.providerName ?? id)}</span>{' '}
-                      <Badge tone="muted">{String(p.type ?? p.providerType ?? '')}</Badge>
+                      <span className="font-medium">{toText(p.name ?? p.provider ?? p.providerName ?? id)}</span>{' '}
+                      <Badge tone="muted">{toText(p.type ?? p.providerType)}</Badge>
                     </span>
                     <Button size="sm" variant="outline" disabled={toggle.isPending} onClick={() => toggle.mutate({ id, on: !on })}>
                       {on ? 'Deactivate' : 'Activate'}
@@ -445,7 +424,7 @@ function ProvidersTab() {
                 );
               })}
             </ul>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
       <Card>
@@ -453,7 +432,11 @@ function ProvidersTab() {
           <CardTitle className="text-base">Login options (public)</CardTitle>
           <CardDescription>GET /iam/v4/auth/login-options — what the sign-in page offers.</CardDescription>
         </CardHeader>
-        <CardContent>{options.isPending ? <Spinner /> : options.isError ? <ErrorNote error={options.error} /> : <JsonView value={options.data} />}</CardContent>
+        <CardContent>
+          <QueryState query={options}>
+            <JsonView value={options.data} />
+          </QueryState>
+        </CardContent>
       </Card>
     </div>
   );
@@ -469,14 +452,22 @@ function ConfigTab() {
           <CardTitle className="text-base">Authentication config</CardTitle>
           <CardDescription>GET /iam/v4/auth/config — token lifetimes, lockout, session policy.</CardDescription>
         </CardHeader>
-        <CardContent>{auth.isPending ? <Spinner /> : auth.isError ? <ErrorNote error={auth.error} /> : <JsonView value={auth.data} />}</CardContent>
+        <CardContent>
+          <QueryState query={auth}>
+            <JsonView value={auth.data} />
+          </QueryState>
+        </CardContent>
       </Card>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">OIDC clients</CardTitle>
           <CardDescription>GET /iam/v4/oidc-clients — check this app's redirect URIs are registered.</CardDescription>
         </CardHeader>
-        <CardContent>{clients.isPending ? <Spinner /> : clients.isError ? <ErrorNote error={clients.error} /> : <JsonView value={clients.data} />}</CardContent>
+        <CardContent>
+          <QueryState query={clients}>
+            <JsonView value={clients.data} />
+          </QueryState>
+        </CardContent>
       </Card>
     </div>
   );

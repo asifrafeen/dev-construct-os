@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Blocks, KeyRound, Loader2, ShieldAlert } from 'lucide-react';
@@ -73,7 +73,7 @@ export function InvitationPage() {
         return land(outcome.forwardedTo);
       case 'navigate':
         // A full navigation, not a router push: the URL is IAM's, not this app's.
-        window.location.assign(outcome.url);
+        globalThis.location.assign(outcome.url);
         return;
       case 'activate': {
         // `join` tells the activation page this came from an invitation rather than an
@@ -122,7 +122,7 @@ export function InvitationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function onVerifyMfa(event: FormEvent) {
+  async function onVerifyMfa(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!mfaId) return;
 
@@ -138,7 +138,7 @@ export function InvitationPage() {
     }
   }
 
-  async function onAuthenticate(event: FormEvent) {
+  async function onAuthenticate(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!auth) return;
 
@@ -193,11 +193,12 @@ export function InvitationPage() {
   }
 
   if (auth) {
+    const maskedEmail = auth.maskedEmail ? ` (${auth.maskedEmail})` : '';
     return (
       <AuthScreen
         icon={KeyRound}
         title="Sign in to accept"
-        description={`You already have an account${auth.maskedEmail ? ` (${auth.maskedEmail})` : ''}. Enter its password to join.`}
+        description={`You already have an account${maskedEmail}. Enter its password to join.`}
       >
         <form onSubmit={onAuthenticate} className="space-y-3">
           <Input

@@ -65,10 +65,10 @@ export const permissions = {
   archiveImpact: (id: string) => blocksFetch<Record<string, unknown>>(`${IAM}/permissions/${encodeURIComponent(id)}/archive-impact`),
   bySeverity: () => blocksFetch<unknown[]>(`${IAM}/permissions/by-severity`),
   resourceGroups: () => blocksFetch<unknown[]>(`${IAM}/resource-groups`),
-  features: (search?: string) =>
-    blocksFetch<{ resource?: string; name?: string; description?: string }[]>(
-      `${IAM}/resource/features${search ? `?search=${encodeURIComponent(search)}` : ''}`,
-    ),
+  features: (search?: string) => {
+    const query = search ? `?search=${encodeURIComponent(search)}` : '';
+    return blocksFetch<{ resource?: string; name?: string; description?: string }[]>(`${IAM}/resource/features${query}`);
+  },
   /** Preview who/what a role's permission change would affect, before assign-permissions. */
   roleChangeImpact: (body: { slug: string; addPermissions?: string[]; removePermissions?: string[]; organizationId?: string | null }) =>
     blocksFetch<Record<string, unknown>>(`${IAM}/roles/permission-change-impact`, {

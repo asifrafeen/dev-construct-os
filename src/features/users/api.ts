@@ -99,10 +99,10 @@ export const users = {
       body: { page: 0, pageSize: 20, ...body },
     }),
 
-  get: (id: string, organizationId?: string) =>
-    blocksFetch<{ data: BlocksUser }>(
-      `${IAM}/users/${id}${organizationId ? `?organizationId=${organizationId}` : ''}`,
-    ),
+  get: (id: string, organizationId?: string) => {
+    const query = organizationId ? `?organizationId=${organizationId}` : '';
+    return blocksFetch<{ data: BlocksUser }>(`${IAM}/users/${id}${query}`);
+  },
 
   /** userPassType 1 = Password, userCreationType 2 = Api. */
   create: (body: Record<string, unknown>) =>

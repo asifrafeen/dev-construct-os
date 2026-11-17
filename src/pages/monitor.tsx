@@ -12,7 +12,7 @@ import {
 } from '@/features/monitor/api';
 import { useMe } from '@/features/users/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal, Field } from '@/components/ui/modal';
 import { Checkbox, Select, splitList } from '@/components/ui/form';
@@ -95,21 +95,21 @@ function CreateCard() {
   const hb = useHeartbeat();
   const [kind, setKind] = useState<'heartbeat' | 'request'>('request');
   const [name, setName] = useState('Construct OS');
-  const [url, setUrl] = useState(`${window.location.origin}/healthz`);
+  const [url, setUrl] = useState(`${globalThis.location.origin}/healthz`);
   const [method, setMethod] = useState<'GET' | 'HEAD' | 'POST'>('GET');
-  const [interval, setInterval_] = useState('60');
+  const [intervalSeconds, setIntervalSeconds] = useState('60');
   const [grace, setGrace] = useState('30');
   const [expected, setExpected] = useState('');
   const [emails, setEmails] = useState(me?.email ?? '');
   const create = useMutation({
     mutationFn: () =>
       kind === 'heartbeat'
-        ? monitor.saveHeartbeat({ name: `${name} heartbeat`, intervalInSeconds: Number(interval), gracePeriodInSeconds: Number(grace), emails: splitList(emails) })
+        ? monitor.saveHeartbeat({ name: `${name} heartbeat`, intervalInSeconds: Number(intervalSeconds), gracePeriodInSeconds: Number(grace), emails: splitList(emails) })
         : monitor.saveRequestMonitor({
             name,
             url: url.trim(),
             httpMethodType: method,
-            intervalInSeconds: Number(interval),
+            intervalInSeconds: Number(intervalSeconds),
             timeoutInSeconds: 30,
             successHttpResponseCodes: ['200'],
             ...(expected.trim() ? { expectedContent: expected.trim() } : {}),
@@ -157,7 +157,7 @@ function CreateCard() {
         )}
         <div className="grid grid-cols-2 gap-2">
           <Field label="Interval (s)">
-            <Input type="number" value={interval} onChange={(e) => setInterval_(e.target.value)} />
+            <Input type="number" value={intervalSeconds} onChange={(e) => setIntervalSeconds(e.target.value)} />
           </Field>
           {kind === 'heartbeat' && (
             <Field label="Grace (s)">
@@ -201,13 +201,11 @@ function MonitorsCard() {
       </CardHeader>
       <CardContent>
         {del.isError && <ErrorNote error={del.error} />}
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : !rows.length ? (
-          <EmptyState title="No monitors" description="Create one above." />
-        ) : (
+        <QueryState
+          query={list}
+          empty={rows.length === 0}
+          emptyState={<EmptyState title="No monitors" description="Create one above." />}
+        >
           <ul className="divide-y text-sm">
             {rows.map((m) => (
               <li key={m.itemId} className="flex items-center justify-between gap-3 py-2">
@@ -223,8 +221,12 @@ function MonitorsCard() {
                   </p>
                 </button>
                 <span className="hidden gap-0.5 sm:flex" title="Incidents in the last 24h">
-                  {(m.incidentSummaries ?? []).slice(-24).map((i, idx) => (
-                    <span key={idx} className="h-4 w-1 rounded-sm bg-destructive/70" title={`${formatDate(i.startTime)} – ${i.downtimeDurationSeconds}s`} />
+                  {(m.incidentSummaries ?? []).slice(-24).map((i) => (
+                    <span
+                      key={`${i.startTime}-${i.endTime}`}
+                      className="h-4 w-1 rounded-sm bg-destructive/70"
+                      title={`${formatDate(i.startTime)} – ${i.downtimeDurationSeconds}s`}
+                    />
                   ))}
                 </span>
                 {m.monitorConfigurationType === 1 && m.url && <CopyButton text={m.url} />}
@@ -234,14 +236,14 @@ function MonitorsCard() {
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
       {open && <MonitorModal m={open} onClose={() => setOpen(null)} />}
     </Card>
   );
 }
 
-function MonitorModal({ m, onClose }: { m: MonitorConfig; onClose: () => void }) {
+function MonitorModal({ m, onClose }: Readonly<{ m: MonitorConfig; onClose: () => void }>) {
   const details = useQuery({ queryKey: ['monitor', 'details', m.itemId], queryFn: () => monitor.details(m.itemId), retry: false });
   const incidents = useQuery({ queryKey: ['monitor', 'incidents', m.itemId], queryFn: () => monitor.incidents(m.itemId), retry: false });
   const rt = useQuery({ queryKey: ['monitor', 'rt', m.itemId], queryFn: () => monitor.responseTime(m.itemId), retry: false, enabled: m.monitorConfigurationType !== 1 });
@@ -253,7 +255,7 @@ function MonitorModal({ m, onClose }: { m: MonitorConfig; onClose: () => void })
       <DetailList
         rows={[
           ['Kind', MONITOR_KIND[m.monitorConfigurationType ?? 0]],
-          ['URL', <span className="break-all font-mono text-xs">{m.url}</span>],
+          ['URL', <span key="url" className="break-all font-mono text-xs">{m.url}</span>],
           ['Status', m.currentStatus ? 'Up' : 'Down'],
           ['Interval / timeout / grace', `${m.intervalInSeconds}s / ${m.timeoutInSeconds ?? '—'}s / ${m.gracePeriodInSeconds ?? '—'}s`],
           ['Alert emails', (m.emails ?? []).join(', ') || '—'],
@@ -262,28 +264,44 @@ function MonitorModal({ m, onClose }: { m: MonitorConfig; onClose: () => void })
       {m.monitorConfigurationType !== 1 && (
         <div>
           <p className="mb-1 text-sm font-medium">Response time (last hour)</p>
-          {rt.isError ? (
-            <ErrorNote error={rt.error} />
-          ) : points.length ? (
-            <div className="flex h-24 items-end gap-px rounded-md border p-2">
-              {points.slice(-120).map((p, i) => (
-                <span
-                  key={i}
-                  className={cn('flex-1 rounded-t-sm', p.statusCode && p.statusCode >= 400 ? 'bg-destructive' : 'bg-primary/70')}
-                  style={{ height: `${Math.max(4, ((p.responseTimeMs ?? 0) / max) * 100)}%` }}
-                  title={`${formatDate(p.timestamp)} · ${p.responseTimeMs} ms · ${p.statusCode}`}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No samples yet.</p>
-          )}
+          <ResponseTimeBars query={rt} points={points} max={max} />
         </div>
       )}
       <p className="text-sm font-medium">Summary (7d / 30d / 365d)</p>
-      {details.isPending ? <Spinner /> : details.isError ? <ErrorNote error={details.error} /> : <JsonView value={details.data} maxHeight="max-h-48" />}
+      <QueryState query={details}>
+        <JsonView value={details.data} maxHeight="max-h-48" />
+      </QueryState>
       <p className="text-sm font-medium">Incidents</p>
-      {incidents.isPending ? <Spinner /> : incidents.isError ? <ErrorNote error={incidents.error} /> : <JsonView value={incidents.data?.data ?? incidents.data} maxHeight="max-h-60" />}
+      <QueryState query={incidents}>
+        <JsonView value={incidents.data?.data ?? incidents.data} maxHeight="max-h-60" />
+      </QueryState>
     </Modal>
+  );
+}
+
+interface ResponseSample {
+  timestamp?: string;
+  responseTimeMs?: number;
+  statusCode?: number;
+}
+
+function ResponseTimeBars({
+  query,
+  points,
+  max,
+}: Readonly<{ query: { isError: boolean; error: unknown }; points: ResponseSample[]; max: number }>) {
+  if (query.isError) return <ErrorNote error={query.error} />;
+  if (points.length === 0) return <p className="text-sm text-muted-foreground">No samples yet.</p>;
+  return (
+    <div className="flex h-24 items-end gap-px rounded-md border p-2">
+      {points.slice(-120).map((p) => (
+        <span
+          key={`${p.timestamp}-${p.statusCode}-${p.responseTimeMs}`}
+          className={cn('flex-1 rounded-t-sm', p.statusCode && p.statusCode >= 400 ? 'bg-destructive' : 'bg-primary/70')}
+          style={{ height: `${Math.max(4, ((p.responseTimeMs ?? 0) / max) * 100)}%` }}
+          title={`${formatDate(p.timestamp)} · ${p.responseTimeMs} ms · ${p.statusCode}`}
+        />
+      ))}
+    </div>
   );
 }

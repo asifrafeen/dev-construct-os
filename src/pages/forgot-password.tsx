@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { KeyRound, Loader2, MailCheck } from 'lucide-react';
 import { recoverAccount } from '@/features/auth/api';
 import { authErrorMessage } from '@/features/auth/errors';
@@ -18,7 +18,7 @@ export function ForgotPasswordPage() {
   // the endpoint most worth rate-limiting behind a challenge.
   const captcha = useCaptcha();
 
-  async function onSubmit(event: FormEvent) {
+  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError(null);

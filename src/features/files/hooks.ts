@@ -22,7 +22,7 @@ function providerHeaders(
     'x-blocks-key': BLOCKS.projectKey,
   };
   if (/\.blob\.core\.windows\.net/i.test(uploadUrl)) h['x-ms-blob-type'] = 'BlockBlob';
-  return { ...h, ...(required ?? {}) };
+  return { ...h, ...required };
 }
 
 /** Presign → PUT → complete (when required) → GetFile, as one step. */

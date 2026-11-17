@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { BLOCKS, configIssues } from '@/lib/env';
@@ -38,6 +39,34 @@ export function BuildInfoPage() {
   const env = Object.entries(import.meta.env as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
   const issues = configIssues();
 
+  let liveContent: ReactNode;
+  if (live.isPending) {
+    liveContent = <Spinner />;
+  } else if (live.isError) {
+    liveContent = <ErrorNote error={live.error} />;
+  } else {
+    liveContent = (
+      <>
+        {stale ? (
+          <p className="flex items-center gap-2 text-sm text-amber-600">
+            <AlertTriangle className="h-4 w-4" /> A newer build is deployed — reload to pick it up.
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 text-sm text-emerald-600">
+            <CheckCircle2 className="h-4 w-4" /> This tab is running the deployed build.
+          </p>
+        )}
+        <DetailList
+          rows={[
+            ['Built at', formatDate(live.data.builtAt)],
+            ['Commit', <span key="commit" className="font-mono text-xs">{live.data.commit || '—'}</span>],
+            ['Build id', live.data.buildId || '—'],
+          ]}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -71,9 +100,9 @@ export function BuildInfoPage() {
             <DetailList
               rows={[
                 ['Version', bundle.version],
-                ['Mode', <Badge tone="muted">{bundle.mode}</Badge>],
+                ['Mode', <Badge key="mode" tone="muted">{bundle.mode}</Badge>],
                 ['Built at', formatDate(bundle.builtAt)],
-                ['Commit', <span className="font-mono text-xs">{bundle.commit || '—'}</span>],
+                ['Commit', <span key="commit" className="font-mono text-xs">{bundle.commit || '—'}</span>],
                 ['Branch', bundle.branch || '—'],
                 ['Build id', bundle.buildId || '—'],
               ]}
@@ -92,32 +121,7 @@ export function BuildInfoPage() {
               Check
             </Button>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {live.isPending ? (
-              <Spinner />
-            ) : live.isError ? (
-              <ErrorNote error={live.error} />
-            ) : (
-              <>
-                {stale ? (
-                  <p className="flex items-center gap-2 text-sm text-amber-600">
-                    <AlertTriangle className="h-4 w-4" /> A newer build is deployed — reload to pick it up.
-                  </p>
-                ) : (
-                  <p className="flex items-center gap-2 text-sm text-emerald-600">
-                    <CheckCircle2 className="h-4 w-4" /> This tab is running the deployed build.
-                  </p>
-                )}
-                <DetailList
-                  rows={[
-                    ['Built at', formatDate(live.data.builtAt)],
-                    ['Commit', <span className="font-mono text-xs">{live.data.commit || '—'}</span>],
-                    ['Build id', live.data.buildId || '—'],
-                  ]}
-                />
-              </>
-            )}
-          </CardContent>
+          <CardContent className="space-y-3">{liveContent}</CardContent>
         </Card>
       </div>
 

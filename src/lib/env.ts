@@ -6,7 +6,11 @@
  * never reach this file.
  */
 
-const trimSlash = (s: string) => s.replace(/\/+$/, '');
+const trimSlash = (s: string) => {
+  let end = s.length;
+  while (end > 0 && s[end - 1] === '/') end--;
+  return s.slice(0, end);
+};
 
 export const BLOCKS = {
   /** e.g. https://blocksapi.slsblx.com — must be same-site with the app domain. */
@@ -72,7 +76,7 @@ export function configIssues(): string[] {
 
   // Falls back to the live origin so the same-site check still runs with the
   // hosted flow switched off, where there is no configured redirect URI.
-  const appUrl = BLOCKS.redirectUri || window.location.origin;
+  const appUrl = BLOCKS.redirectUri || globalThis.location.origin;
   if (BLOCKS.apiUrl && appUrl) {
     const registrable = (host: string) => host.split('.').slice(-2).join('.');
     try {

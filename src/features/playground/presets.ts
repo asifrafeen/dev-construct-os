@@ -46,7 +46,7 @@ export const PRESETS: Record<string, Preset[]> = {
     { label: 'Security summary', method: 'GET', path: '/iam/v4/security/summary' },
     { label: 'Sessions', method: 'GET', path: '/iam/v4/security/sessions' },
     { label: 'Activity', method: 'POST', path: '/iam/v4/security/activity', body: { page: 0, pageSize: 20 } },
-    { label: 'Password policy check (public)', method: 'POST', path: '/iam/v4/idp/password-check', body: { password: 'Test1234!' } },
+    { label: 'Password policy check (public)', method: 'POST', path: '/iam/v4/idp/password-check', body: { password: '' } },
     { label: 'Validate activation code (public)', method: 'POST', path: '/iam/v4/auth/validate-activation', body: { activationCode: '<code>' } },
     { label: 'Client credentials', method: 'GET', path: '/iam/v4/auth/client-credentials' },
     { label: 'Identity providers', method: 'GET', path: '/iam/v4/auth/identity-providers' },
@@ -129,10 +129,23 @@ export const PRESETS: Record<string, Preset[]> = {
     { label: 'My notifications', method: 'GET', path: '/logic/v4/Notifier/GetNotifications?Page=0&PageSize=20' },
     { label: 'Mark all read', method: 'POST', path: '/logic/v4/Notifier/MarkAllNotificationAsRead' },
     {
+      label: 'Notification configurations',
+      method: 'GET',
+      path: '/logic/v4/Notification/Gets?Page=0&PageSize=200',
+    },
+    {
       label: 'Notify user',
       method: 'POST',
       path: '/logic/v4/Notifier/Notify',
-      body: { userIds: ['<user id>'], denormalizedPayload: '{"title":"Hello","body":"From the playground"}' },
+      // Logic requires a configuration and the three connection/response strings.
+      body: {
+        configurationName: '<configuration name>',
+        userIds: ['<user id>'],
+        denormalizedPayload: '{"title":"Hello","body":"From the playground"}',
+        connectionId: 'playground',
+        responseKey: 'playground',
+        responseValue: '1',
+      },
     },
     {
       label: 'Send mail',

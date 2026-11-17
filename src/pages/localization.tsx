@@ -11,7 +11,7 @@ import {
 } from '@/features/localization/api';
 import { clearMissingKeys, I18N_MODULES, missingKeys, useI18n } from '@/features/localization/i18n';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Select, Textarea, splitList } from '@/components/ui/form';
 import { JsonView, PageHeader, Tabs } from '@/components/ui/layout';
@@ -73,19 +73,33 @@ function LanguagesTab() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <ListCard title="Languages (public)" subtitle="Language/Gets — no session needed" query={publicLangs} render={renderLanguage} />
+      <ListCard
+        title="Languages (public)"
+        subtitle="Language/Gets — no session needed"
+        query={publicLangs}
+        render={renderLanguage}
+        itemKey={languageKey}
+      />
       <ListCard
         title="Languages (current tenant)"
         subtitle="Language/GetLanguagesForCurrentTenant — under the session"
         query={tenantLangs}
         render={renderLanguage}
+        itemKey={languageKey}
       />
-      <ListCard title="Modules (public)" subtitle="Module/Gets" query={publicMods} render={renderModule} />
+      <ListCard
+        title="Modules (public)"
+        subtitle="Module/Gets"
+        query={publicMods}
+        render={renderModule}
+        itemKey={moduleKey}
+      />
       <ListCard
         title="Modules (current tenant)"
         subtitle="Module/GetModulesForCurrentTenant"
         query={tenantMods}
         render={renderModule}
+        itemKey={moduleKey}
       />
     </div>
   );
@@ -103,6 +117,10 @@ function renderLanguage(l: Language) {
   );
 }
 
+const languageKey = (l: Language) => l.itemId ?? languageCode(l);
+
+const moduleKey = (m: LocalizationModule) => m.itemId ?? moduleName(m);
+
 function renderModule(m: LocalizationModule) {
   return (
     <div className="flex items-center justify-between gap-2">
@@ -117,12 +135,15 @@ function ListCard<T>({
   subtitle,
   query,
   render,
-}: {
+  itemKey,
+}: Readonly<{
   title: string;
   subtitle: string;
   query: { data?: T[]; isPending: boolean; isError: boolean; error: unknown };
   render: (item: T) => ReactNode;
-}) {
+  itemKey: (item: T) => string;
+}>) {
+  const items = query.data ?? [];
   return (
     <Card>
       <CardHeader>
@@ -130,21 +151,15 @@ function ListCard<T>({
         <CardDescription>{subtitle}</CardDescription>
       </CardHeader>
       <CardContent>
-        {query.isPending ? (
-          <Spinner />
-        ) : query.isError ? (
-          <ErrorNote error={query.error} />
-        ) : !query.data?.length ? (
-          <EmptyState title="None configured" />
-        ) : (
+        <QueryState query={query} empty={items.length === 0} emptyState={<EmptyState title="None configured" />}>
           <ul className="divide-y text-sm">
-            {query.data.map((item, i) => (
-              <li key={i} className="py-2">
+            {items.map((item) => (
+              <li key={itemKey(item)} className="py-2">
                 {render(item)}
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
     </Card>
   );
@@ -214,13 +229,13 @@ function DictionaryTab() {
           </Button>
         </div>
 
-        {dict.isPending ? (
-          <Spinner />
-        ) : dict.isError ? (
-          <ErrorNote error={dict.error} />
-        ) : rows.length === 0 ? (
-          <EmptyState title="No keys" description="This module has no translations for that language, or the filter excludes them." />
-        ) : (
+        <QueryState
+          query={dict}
+          empty={rows.length === 0}
+          emptyState={
+            <EmptyState title="No keys" description="This module has no translations for that language, or the filter excludes them." />
+          }
+        >
           <div className="max-h-[60vh] overflow-auto">
             <table className="w-full text-sm">
               <thead>
@@ -240,7 +255,7 @@ function DictionaryTab() {
             </table>
             <p className="pt-2 text-xs text-muted-foreground">{rows.length} keys</p>
           </div>
-        )}
+        </QueryState>
       </CardContent>
     </Card>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import { roles as rolesApi, slugify, type Role } from '@/features/roles/api';
@@ -12,7 +12,7 @@ import {
 } from '@/features/roles/hooks';
 import { useMyOrgsWithActive } from '@/features/orgs/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState, Spinner } from '@/components/ui/misc';
 import { Field, Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/utils';
@@ -32,7 +32,8 @@ export function RolesPage() {
   // A narrowed search or an org switch would otherwise leave you on an empty page 5.
   useEffect(() => setPage(0), [search, activeOrgId]);
 
-  const { data, isPending, isError, error } = useRoles({ search, page, pageSize: PAGE_SIZE });
+  const rolesQuery = useRoles({ search, page, pageSize: PAGE_SIZE });
+  const { data } = rolesQuery;
   const rows = data?.data ?? [];
   const total = data?.totalCount ?? 0;
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
@@ -46,8 +47,7 @@ export function RolesPage() {
             POST /iam/v4/iam/roles — scoped to{' '}
             <span className="font-medium text-foreground">
               {activeOrg?.name ?? 'your organization'}
-            </span>
-            . Switch organizations in the header to manage another set.
+            </span>. Switch organizations in the header to manage another set.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -73,28 +73,28 @@ export function RolesPage() {
         </CardHeader>
 
         <CardContent>
-          {isPending ? (
-            <Spinner />
-          ) : isError ? (
-            <ErrorNote error={error} />
-          ) : rows.length === 0 ? (
-            <EmptyState
-              title="No roles yet"
-              description={
-                search
-                  ? 'No role in this organization matches your search.'
-                  : 'Create a role to start granting access in this organization.'
-              }
-              action={
-                search ? undefined : (
-                  <Button size="sm" className="mt-2" onClick={() => setEditing('new')}>
-                    <Plus className="h-4 w-4" />
-                    New role
-                  </Button>
-                )
-              }
-            />
-          ) : (
+          <QueryState
+            query={rolesQuery}
+            empty={rows.length === 0}
+            emptyState={
+              <EmptyState
+                title="No roles yet"
+                description={
+                  search
+                    ? 'No role in this organization matches your search.'
+                    : 'Create a role to start granting access in this organization.'
+                }
+                action={
+                  search ? undefined : (
+                    <Button size="sm" className="mt-2" onClick={() => setEditing('new')}>
+                      <Plus className="h-4 w-4" />
+                      New role
+                    </Button>
+                  )
+                }
+              />
+            }
+          >
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -161,7 +161,7 @@ export function RolesPage() {
                 </tbody>
               </table>
             </div>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
 
@@ -211,12 +211,12 @@ function RoleFormModal({
   existing,
   orgName,
   onClose,
-}: {
+}: Readonly<{
   role: Role | null;
   existing: Role[];
   orgName?: string;
   onClose: () => void;
-}) {
+}>) {
   const isEdit = !!role;
   const create = useCreateRole();
   const update = useUpdateRole();
@@ -254,6 +254,7 @@ function RoleFormModal({
     !duplicateSlug &&
     (!duplicateName || confirmDuplicateName) &&
     !mutation.isPending;
+  const idleLabel = isEdit ? 'Save changes' : 'Create role';
 
   const submit = () => {
     if (!canSubmit) return;
@@ -290,7 +291,7 @@ function RoleFormModal({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!canSubmit}>
-            {mutation.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Create role'}
+            {mutation.isPending ? 'Saving…' : idleLabel}
           </Button>
         </>
       }
@@ -393,8 +394,7 @@ function RoleFormModal({
             onChange={(e) => setCanCreateOwn(e.target.checked)}
           />
           <span>
-            Holders can create sub-roles
-            <span className="block text-xs text-muted-foreground">
+            Holders can create sub-roles<span className="block text-xs text-muted-foreground">
               Lets someone with this role define roles beneath it.
             </span>
           </span>
@@ -409,8 +409,7 @@ function RoleFormModal({
               onChange={(e) => setPropagate(e.target.checked)}
             />
             <span>
-              Apply to every organization
-              <span className="block text-xs text-muted-foreground">
+              Apply to every organization<span className="block text-xs text-muted-foreground">
                 Updates this role wherever it exists, not only in the active organization.
               </span>
             </span>
@@ -430,7 +429,7 @@ function RoleFormModal({
  * `confirmRevokeFromUsers` is set. The impact preview turns that into an informed
  * choice rather than a blind retry.
  */
-function DeleteRoleModal({ role, onClose }: { role: Role; onClose: () => void }) {
+function DeleteRoleModal({ role, onClose }: Readonly<{ role: Role; onClose: () => void }>) {
   const remove = useDeleteRole();
   const [confirmRevoke, setConfirmRevoke] = useState(false);
 
@@ -441,6 +440,20 @@ function DeleteRoleModal({ role, onClose }: { role: Role; onClose: () => void })
   });
 
   const holders = role.count ?? 0;
+
+  let impactNote: ReactNode = null;
+  if (impact.isPending) {
+    impactNote = <Spinner label="Checking impact…" />;
+  } else if (impact.data) {
+    impactNote = (
+      <details className="text-sm">
+        <summary className="cursor-pointer text-muted-foreground">Impact details</summary>
+        <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted p-3 font-mono text-xs">
+          {JSON.stringify(impact.data, null, 2)}
+        </pre>
+      </details>
+    );
+  }
 
   return (
     <Modal
@@ -486,16 +499,7 @@ function DeleteRoleModal({ role, onClose }: { role: Role; onClose: () => void })
         </>
       )}
 
-      {impact.isPending ? (
-        <Spinner label="Checking impact…" />
-      ) : impact.data ? (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-muted-foreground">Impact details</summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted p-3 font-mono text-xs">
-            {JSON.stringify(impact.data, null, 2)}
-          </pre>
-        </details>
-      ) : null}
+      {impactNote}
 
       {remove.isError && <ErrorNote error={remove.error} />}
     </Modal>
@@ -503,7 +507,7 @@ function DeleteRoleModal({ role, onClose }: { role: Role; onClose: () => void })
 }
 
 /** The grant API takes add/remove lists, so the checkboxes are diffed against what's already granted. */
-function RolePermissionsModal({ role, onClose }: { role: Role; onClose: () => void }) {
+function RolePermissionsModal({ role, onClose }: Readonly<{ role: Role; onClose: () => void }>) {
   const { activeOrgId } = useMyOrgsWithActive();
   const granted = useRolePermissions(role.slug);
   const all = useQuery({
@@ -534,6 +538,9 @@ function RolePermissionsModal({ role, onClose }: { role: Role; onClose: () => vo
   const addPermissions = [...current].filter((n) => !grantedNames.has(n));
   const removePermissions = [...grantedNames].filter((n) => !current.has(n));
   const dirty = addPermissions.length > 0 || removePermissions.length > 0;
+  const saveLabel = dirty
+    ? `Save (+${addPermissions.length} / −${removePermissions.length})`
+    : 'No changes';
 
   const toggle = (name: string) =>
     setSelected((prev) => {
@@ -570,11 +577,7 @@ function RolePermissionsModal({ role, onClose }: { role: Role; onClose: () => vo
               )
             }
           >
-            {save.isPending
-              ? 'Saving…'
-              : dirty
-                ? `Save (+${addPermissions.length} / −${removePermissions.length})`
-                : 'No changes'}
+            {save.isPending ? 'Saving…' : saveLabel}
           </Button>
         </>
       }
@@ -585,18 +588,19 @@ function RolePermissionsModal({ role, onClose }: { role: Role; onClose: () => vo
         onChange={(e) => setFilter(e.target.value)}
       />
 
-      {granted.isPending || all.isPending ? (
-        <Spinner label="Loading permissions…" />
-      ) : all.isError ? (
-        <ErrorNote error={all.error} />
-      ) : options.length === 0 ? (
-        <EmptyState
-          title="No permissions"
-          description={
-            filter ? 'Nothing matches your filter.' : 'This project has no permissions defined yet.'
-          }
-        />
-      ) : (
+      <QueryState
+        query={{ isPending: granted.isPending || all.isPending, isError: all.isError, error: all.error }}
+        loadingLabel="Loading permissions…"
+        empty={options.length === 0}
+        emptyState={
+          <EmptyState
+            title="No permissions"
+            description={
+              filter ? 'Nothing matches your filter.' : 'This project has no permissions defined yet.'
+            }
+          />
+        }
+      >
         <div className="max-h-80 space-y-1 overflow-y-auto rounded-md border p-2">
           {options.map((p) => (
             <label
@@ -623,7 +627,7 @@ function RolePermissionsModal({ role, onClose }: { role: Role; onClose: () => vo
             </label>
           ))}
         </div>
-      )}
+      </QueryState>
 
       {save.isError && <ErrorNote error={save.error} />}
     </Modal>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wand2 } from 'lucide-react';
 import { gql } from '@/features/data/gateway';
@@ -13,12 +13,12 @@ import {
   type SchemaField,
 } from '@/features/data/schemas';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal, Field } from '@/components/ui/modal';
 import { Checkbox, Select, Textarea, parseJsonInput } from '@/components/ui/form';
 import { JsonView, PageHeader, Pager, Tabs } from '@/components/ui/layout';
-import { cn } from '@/lib/utils';
+import { cn, toText } from '@/lib/utils';
 
 type Tab = 'records' | 'console' | 'validations' | 'tools';
 
@@ -59,7 +59,10 @@ function useSchemas() {
   });
 }
 
-function SchemaList({ selected, onSelect }: { selected: SchemaDefinition | null; onSelect: (s: SchemaDefinition) => void }) {
+function SchemaList({
+  selected,
+  onSelect,
+}: Readonly<{ selected: SchemaDefinition | null; onSelect: (s: SchemaDefinition) => void }>) {
   const schemas = useSchemas();
   const [filter, setFilter] = useState('');
   const rows = (schemas.data ?? []).filter((s) => !filter || s.schemaName.toLowerCase().includes(filter.toLowerCase()));
@@ -76,13 +79,11 @@ function SchemaList({ selected, onSelect }: { selected: SchemaDefinition | null;
         <Input placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
       </CardHeader>
       <CardContent className="max-h-[65vh] overflow-y-auto">
-        {schemas.isPending ? (
-          <Spinner />
-        ) : schemas.isError ? (
-          <ErrorNote error={schemas.error} />
-        ) : !rows.length ? (
-          <EmptyState title="No schemas" description="Create one in Blocks OS → Data, then reload it." />
-        ) : (
+        <QueryState
+          query={schemas}
+          empty={rows.length === 0}
+          emptyState={<EmptyState title="No schemas" description="Create one in Blocks OS → Data, then reload it." />}
+        >
           <ul className="space-y-0.5">
             {rows.map((s) => (
               <li key={s.id}>
@@ -99,41 +100,51 @@ function SchemaList({ selected, onSelect }: { selected: SchemaDefinition | null;
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
       </CardContent>
     </Card>
   );
 }
 
-function RecordsTab({ selected, onSelect }: { selected: SchemaDefinition | null; onSelect: (s: SchemaDefinition) => void }) {
+function RecordsTab({
+  selected,
+  onSelect,
+}: Readonly<{ selected: SchemaDefinition | null; onSelect: (s: SchemaDefinition) => void }>) {
+  let detail: ReactNode;
+  if (selected === null) {
+    detail = (
+      <Card>
+        <CardContent className="p-6">
+          <EmptyState title="Pick a schema" description="Its records load here, with create, edit, delete and bulk operations." />
+        </CardContent>
+      </Card>
+    );
+  } else if (selected.schemaType === 2) {
+    detail = (
+      <Card>
+        <CardContent className="space-y-3 p-6">
+          <p className="text-sm text-muted-foreground">
+            <strong>{selected.schemaName}</strong> is a Dto — an embedded object type with no operations of its own.
+          </p>
+          <JsonView value={selected} />
+        </CardContent>
+      </Card>
+    );
+  } else {
+    detail = <RecordsPanel key={selected.id} schema={selected} />;
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[16rem_minmax(0,1fr)]">
       <SchemaList selected={selected} onSelect={onSelect} />
-      {!selected ? (
-        <Card>
-          <CardContent className="p-6">
-            <EmptyState title="Pick a schema" description="Its records load here, with create, edit, delete and bulk operations." />
-          </CardContent>
-        </Card>
-      ) : selected.schemaType === 2 ? (
-        <Card>
-          <CardContent className="space-y-3 p-6">
-            <p className="text-sm text-muted-foreground">
-              <strong>{selected.schemaName}</strong> is a Dto — an embedded object type with no operations of its own.
-            </p>
-            <JsonView value={selected} />
-          </CardContent>
-        </Card>
-      ) : (
-        <RecordsPanel key={selected.id} schema={selected} />
-      )}
+      {detail}
     </div>
   );
 }
 
 const PAGE_SIZE = 20;
 
-function RecordsPanel({ schema }: { schema: SchemaDefinition }) {
+function RecordsPanel({ schema }: Readonly<{ schema: SchemaDefinition }>) {
   const api = useMemo(() => recordsApi(schema), [schema]);
   const qc = useQueryClient();
   const fields = schema.fields ?? [];
@@ -161,6 +172,7 @@ function RecordsPanel({ schema }: { schema: SchemaDefinition }) {
       }),
     retry: false,
   });
+  const items = list.data?.items ?? [];
   const invalidate = () => qc.invalidateQueries({ queryKey: key });
 
   const remove = useMutation({
@@ -243,13 +255,11 @@ function RecordsPanel({ schema }: { schema: SchemaDefinition }) {
 
       <CardContent>
         {remove.isError && <ErrorNote error={remove.error} />}
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : !list.data?.items?.length ? (
-          <EmptyState title="No records" description="Create one, or loosen the filter." />
-        ) : (
+        <QueryState
+          query={list}
+          empty={items.length === 0}
+          emptyState={<EmptyState title="No records" description="Create one, or loosen the filter." />}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -263,7 +273,7 @@ function RecordsPanel({ schema }: { schema: SchemaDefinition }) {
                 </tr>
               </thead>
               <tbody>
-                {list.data.items.map((row, i) => {
+                {items.map((row, i) => {
                   const id = row.ItemId as string | undefined;
                   return (
                     <tr key={id ?? i} className="cursor-pointer border-b last:border-0 hover:bg-accent/40" onClick={() => setViewing(row)}>
@@ -302,7 +312,7 @@ function RecordsPanel({ schema }: { schema: SchemaDefinition }) {
               </tbody>
             </table>
           </div>
-        )}
+        </QueryState>
         {list.data && <Pager page={page} pageCount={list.data.totalPages} total={list.data.totalCount} onChange={setPage} />}
       </CardContent>
 
@@ -328,9 +338,7 @@ function RecordsPanel({ schema }: { schema: SchemaDefinition }) {
 }
 
 function formatCell(v: unknown): string {
-  if (v === null || v === undefined) return '—';
-  if (typeof v === 'object') return JSON.stringify(v);
-  return String(v);
+  return toText(v, '—');
 }
 
 /** Whether a field gets a plain control, or has to be edited as JSON. */
@@ -340,7 +348,7 @@ function toInput(f: SchemaField, v: unknown): string {
   if (v === null || v === undefined) return '';
   if (isComplex(f)) return JSON.stringify(v, null, 2);
   if (f.type === 'DateTime' && typeof v === 'string') return v.slice(0, 16);
-  return String(v);
+  return toText(v);
 }
 
 function fromInput(f: SchemaField, raw: string): unknown {
@@ -348,9 +356,9 @@ function fromInput(f: SchemaField, raw: string): unknown {
   if (isComplex(f)) return parseJsonInput(raw, f.name);
   switch (f.type) {
     case 'Int':
-      return parseInt(raw, 10);
+      return Number.parseInt(raw, 10);
     case 'Float':
-      return parseFloat(raw);
+      return Number.parseFloat(raw);
     case 'Boolean':
       return raw === 'true';
     case 'DateTime':
@@ -360,17 +368,61 @@ function fromInput(f: SchemaField, raw: string): unknown {
   }
 }
 
+function inputType(f: SchemaField): string {
+  if (f.type === 'Int' || f.type === 'Float') return 'number';
+  if (f.type === 'DateTime') return 'datetime-local';
+  return 'text';
+}
+
+/** The control for one field of the record form: a select for enums and booleans, JSON for complex values. */
+function FieldControl({
+  field: f,
+  value,
+  onChange,
+}: Readonly<{ field: SchemaField; value: string; onChange: (value: string) => void }>) {
+  if (f.type === 'Enum' && !f.isArray) {
+    return (
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">—</option>
+        {(f.enumValues ?? []).map((v) => (
+          <option key={v}>{v}</option>
+        ))}
+      </Select>
+    );
+  }
+  if (f.type === 'Boolean' && !f.isArray) {
+    return (
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">—</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </Select>
+    );
+  }
+  if (isComplex(f)) {
+    return <Textarea mono rows={3} value={value} onChange={(e) => onChange(e.target.value)} />;
+  }
+  return (
+    <Input
+      type={inputType(f)}
+      step={f.type === 'Float' ? 'any' : undefined}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
 function RecordModal({
   schema,
   record,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   schema: SchemaDefinition;
   record: Record<string, unknown> | null;
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   const api = useMemo(() => recordsApi(schema), [schema]);
   const mode = record ? 'update' : 'insert';
   const fields = writableFields(schema, mode);
@@ -426,29 +478,7 @@ function RecordModal({
                 label={`${f.name}${required(f) ? ' *' : ''}`}
                 hint={[f.isArray ? `${f.type}[]` : f.type, isBaseField(f) ? 'system' : '', f.description].filter(Boolean).join(' · ')}
               >
-                {f.type === 'Enum' && !f.isArray ? (
-                  <Select value={values[f.name] ?? ''} onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}>
-                    <option value="">—</option>
-                    {(f.enumValues ?? []).map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </Select>
-                ) : f.type === 'Boolean' && !f.isArray ? (
-                  <Select value={values[f.name] ?? ''} onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}>
-                    <option value="">—</option>
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </Select>
-                ) : isComplex(f) ? (
-                  <Textarea mono rows={3} value={values[f.name] ?? ''} onChange={(e) => setValues({ ...values, [f.name]: e.target.value })} />
-                ) : (
-                  <Input
-                    type={f.type === 'Int' || f.type === 'Float' ? 'number' : f.type === 'DateTime' ? 'datetime-local' : 'text'}
-                    step={f.type === 'Float' ? 'any' : undefined}
-                    value={values[f.name] ?? ''}
-                    onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
-                  />
-                )}
+                <FieldControl field={f} value={values[f.name] ?? ''} onChange={(v) => setValues({ ...values, [f.name]: v })} />
               </Field>
             </div>
           ))}
@@ -464,12 +494,12 @@ function BulkModal({
   mode,
   onClose,
   onDone,
-}: {
+}: Readonly<{
   schema: SchemaDefinition;
   mode: 'insert' | 'update' | 'delete';
   onClose: () => void;
   onDone: () => void;
-}) {
+}>) {
   const api = useMemo(() => recordsApi(schema), [schema]);
   const [items, setItems] = useState('[\n  {}\n]');
   const [where, setWhere] = useState('{}');
@@ -522,7 +552,7 @@ function BulkModal({
   );
 }
 
-function ConsoleTab({ schema }: { schema: SchemaDefinition | null }) {
+function ConsoleTab({ schema }: Readonly<{ schema: SchemaDefinition | null }>) {
   const sample = schema
     ? `query {\n  ${recordsApi(schema).listOp}(paging: { pageNo: 1, pageSize: 10 }) {\n    totalCount\n    items { ${recordsApi(schema).selection} }\n  }\n}`
     : `query {\n  getProducts(paging: { pageNo: 1, pageSize: 10 }) {\n    totalCount\n    items { ItemId }\n  }\n}`;
@@ -531,6 +561,11 @@ function ConsoleTab({ schema }: { schema: SchemaDefinition | null }) {
   const run = useMutation({
     mutationFn: () => gql<Record<string, unknown>>(query, parseJsonInput<Record<string, unknown>>(variables, 'Variables') ?? {}),
   });
+
+  let response: ReactNode;
+  if (run.isError) response = <ErrorNote error={run.error} />;
+  else if (run.data) response = <JsonView value={run.data} maxHeight="max-h-[60vh]" />;
+  else response = <p className="text-sm text-muted-foreground">Run a query to see the result.</p>;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -563,21 +598,13 @@ function ConsoleTab({ schema }: { schema: SchemaDefinition | null }) {
           <CardTitle className="text-base">Response</CardTitle>
           <CardDescription>“Field 'getX' does not exist” means the schema isn't created or wasn't reloaded.</CardDescription>
         </CardHeader>
-        <CardContent>
-          {run.isError ? (
-            <ErrorNote error={run.error} />
-          ) : run.data ? (
-            <JsonView value={run.data} maxHeight="max-h-[60vh]" />
-          ) : (
-            <p className="text-sm text-muted-foreground">Run a query to see the result.</p>
-          )}
-        </CardContent>
+        <CardContent>{response}</CardContent>
       </Card>
     </div>
   );
 }
 
-function ValidationsTab({ schema }: { schema: SchemaDefinition | null }) {
+function ValidationsTab({ schema }: Readonly<{ schema: SchemaDefinition | null }>) {
   const all = useQuery({
     queryKey: ['data', 'validations', schema?.id ?? 'all'],
     queryFn: () => (schema ? schemaApi.validationsBySchema(schema.id) : schemaApi.validations()),
@@ -589,7 +616,11 @@ function ValidationsTab({ schema }: { schema: SchemaDefinition | null }) {
         <CardTitle className="text-base">Validation rules {schema ? `— ${schema.schemaName}` : '(all schemas)'}</CardTitle>
         <CardDescription>The rules the gateway enforces on writes. Pick a schema on the Records tab to narrow this.</CardDescription>
       </CardHeader>
-      <CardContent>{all.isPending ? <Spinner /> : all.isError ? <ErrorNote error={all.error} /> : <JsonView value={all.data} maxHeight="max-h-[60vh]" />}</CardContent>
+      <CardContent>
+        <QueryState query={all}>
+          <JsonView value={all.data} maxHeight="max-h-[60vh]" />
+        </QueryState>
+      </CardContent>
     </Card>
   );
 }

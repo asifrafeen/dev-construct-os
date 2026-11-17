@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Send } from 'lucide-react';
 import { BLOCKS } from '@/lib/env';
@@ -36,7 +36,8 @@ export function PlaygroundPage() {
 
   const run = useMutation({
     mutationFn: async (): Promise<Outcome> => {
-      const url = /^https?:\/\//i.test(path) ? path : `${BLOCKS.apiUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+      const separator = path.startsWith('/') ? '' : '/';
+      const url = /^https?:\/\//i.test(path) ? path : `${BLOCKS.apiUrl}${separator}${path}`;
       const parsedBody = method === 'GET' ? undefined : parseJsonInput(body, 'Body');
       const parsedHeaders = parseJsonInput<Record<string, string>>(headers, 'Headers');
       const t0 = performance.now();
@@ -60,10 +61,19 @@ export function PlaygroundPage() {
 
   const load = (p: Preset) => {
     setMethod(p.method);
-    setPath(p.path.replace(/<project key>/g, BLOCKS.projectKey));
+    setPath(p.path.replaceAll('<project key>', BLOCKS.projectKey));
     setBody(p.body === undefined ? '' : JSON.stringify(p.body, null, 2));
     run.reset();
   };
+
+  let response: ReactNode;
+  if (run.isError) {
+    response = <ErrorNote error={run.error} />;
+  } else if (run.data) {
+    response = <JsonView value={run.data.body ?? '(empty body)'} maxHeight="max-h-[60vh]" />;
+  } else {
+    response = <p className="text-sm text-muted-foreground">Send a request to see the response.</p>;
+  }
 
   return (
     <div className="space-y-6">
@@ -162,15 +172,7 @@ export function PlaygroundPage() {
                 </div>
               )}
             </CardHeader>
-            <CardContent>
-              {run.isError ? (
-                <ErrorNote error={run.error} />
-              ) : run.data ? (
-                <JsonView value={run.data.body ?? '(empty body)'} maxHeight="max-h-[60vh]" />
-              ) : (
-                <p className="text-sm text-muted-foreground">Send a request to see the response.</p>
-              )}
-            </CardContent>
+            <CardContent>{response}</CardContent>
           </Card>
         </div>
       </div>

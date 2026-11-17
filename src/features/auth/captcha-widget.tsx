@@ -33,22 +33,20 @@ interface CaptchaApi {
 }
 
 declare global {
-  interface Window {
-    grecaptcha?: CaptchaApi;
-    hcaptcha?: CaptchaApi;
-  }
+  var grecaptcha: CaptchaApi | undefined;
+  var hcaptcha: CaptchaApi | undefined;
 }
 
 const PROVIDERS = {
   recaptcha: {
     scriptId: 'blocks-recaptcha-script',
     src: 'https://www.google.com/recaptcha/api.js?render=explicit',
-    api: () => window.grecaptcha,
+    api: () => globalThis.grecaptcha,
   },
   hcaptcha: {
     scriptId: 'blocks-hcaptcha-script',
     src: 'https://js.hcaptcha.com/1/api.js?render=explicit',
-    api: () => window.hcaptcha,
+    api: () => globalThis.hcaptcha,
   },
 } as const;
 

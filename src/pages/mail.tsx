@@ -6,7 +6,7 @@ import { useI18n } from '@/features/localization/i18n';
 import { mail, type MailboxMail, type SendMailInput } from '@/features/mail/api';
 import { useUploadFile } from '@/features/files/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Textarea, parseJsonInput, splitList } from '@/components/ui/form';
 import { Field } from '@/components/ui/modal';
@@ -40,6 +40,11 @@ export function MailPage() {
   );
 }
 
+function mailParty(m: MailboxMail) {
+  if (m.isInBound) return `from ${m.from}`;
+  return `to ${Array.isArray(m.to) ? m.to.join(', ') : m.to}`;
+}
+
 function MailboxTab() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -67,13 +72,11 @@ function MailboxTab() {
         <Checkbox label="Inbound only" checked={inbound} onChange={setInbound} />
       </CardHeader>
       <CardContent>
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : !rows.length ? (
-          <EmptyState title="No mail" description="Send one from Compose — it shows up here with its delivery status." />
-        ) : (
+        <QueryState
+          query={list}
+          empty={rows.length === 0}
+          emptyState={<EmptyState title="No mail" description="Send one from Compose — it shows up here with its delivery status." />}
+        >
           <ul className="divide-y text-sm">
             {rows.map((m, i) => (
               <li key={String(m.itemId ?? m.messageId ?? i)}>
@@ -81,7 +84,7 @@ function MailboxTab() {
                   <span className="min-w-0">
                     <span className="block truncate font-medium">{m.subject ?? '(no subject)'}</span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {m.isInBound ? `from ${m.from}` : `to ${Array.isArray(m.to) ? m.to.join(', ') : m.to}`} · {formatDate(m.date ?? m.createdDate)}
+                      {mailParty(m)} · {formatDate(m.date ?? m.createdDate)}
                     </span>
                   </span>
                   <Badge tone={/fail|error/i.test(String(m.status)) ? 'danger' : 'muted'}>{String(m.status ?? '—')}</Badge>
@@ -89,12 +92,14 @@ function MailboxTab() {
               </li>
             ))}
           </ul>
-        )}
+        </QueryState>
         <Pager page={page} pageCount={Math.ceil(total / pageSize)} total={total} onChange={setPage} />
         {open && (
           <div className="mt-4 space-y-2 border-t pt-4">
             <p className="text-sm font-medium">GetMailBoxMail</p>
-            {detail.isPending ? <Spinner /> : detail.isError ? <ErrorNote error={detail.error} /> : <JsonView value={detail.data} />}
+            <QueryState query={detail}>
+              <JsonView value={detail.data} />
+            </QueryState>
           </div>
         )}
       </CardContent>
@@ -112,7 +117,11 @@ function TemplatesTab() {
         <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>{sub}</CardDescription>
       </CardHeader>
-      <CardContent>{q.isPending ? <Spinner /> : q.isError ? <ErrorNote error={q.error} /> : <JsonView value={q.data} maxHeight="max-h-[50vh]" />}</CardContent>
+      <CardContent>
+        <QueryState query={q}>
+          <JsonView value={q.data} maxHeight="max-h-[50vh]" />
+        </QueryState>
+      </CardContent>
     </Card>
   );
   return (
@@ -141,6 +150,7 @@ function ComposeTab() {
   const [toAny, setToAny] = useState(false);
   const [isTest, setIsTest] = useState(true);
   const [phoneAsEmail, setPhoneAsEmail] = useState(false);
+  const removeAttachment = (fileId: string) => setAttachments((prev) => prev.filter((p) => p.fileId !== fileId));
 
   const send = useMutation({
     mutationFn: () => {
@@ -208,7 +218,7 @@ function ComposeTab() {
                   {a.name}
                   <button
                     className="ml-1 text-muted-foreground hover:text-foreground"
-                    onClick={() => setAttachments((prev) => prev.filter((p) => p.fileId !== a.fileId))}
+                    onClick={() => removeAttachment(a.fileId)}
                   >
                     ×
                   </button>

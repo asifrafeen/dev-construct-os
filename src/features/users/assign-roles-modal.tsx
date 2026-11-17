@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAssignUserAccess } from '@/features/users/hooks';
 import { useAssignableRoles, useRoles } from '@/features/roles/hooks';
 import { useMyOrgsWithActive } from '@/features/orgs/hooks';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
@@ -21,12 +21,12 @@ export function AssignRolesModal({
   displayName,
   currentRoles,
   onClose,
-}: {
+}: Readonly<{
   userId: string;
   displayName: string;
   currentRoles: string[];
   onClose: () => void;
-}) {
+}>) {
   const { orgs, activeOrgId } = useMyOrgsWithActive();
   const activeOrg = orgs.find((o) => o.itemId === activeOrgId);
 
@@ -69,6 +69,10 @@ export function AssignRolesModal({
 
   const outsideOrg = currentRoles.filter((r) => !available.some((a) => a.slug === r));
 
+  let saveLabel = 'No changes';
+  if (assign.isPending) saveLabel = 'Saving…';
+  else if (dirty) saveLabel = `Save ${selected.size} role(s)`;
+
   return (
     <Modal
       open
@@ -80,8 +84,7 @@ export function AssignRolesModal({
           Granted in{' '}
           <span className="font-medium text-foreground">
             {activeOrg?.name ?? 'the active organization'}
-          </span>
-          . Unchecking a role removes it.
+          </span>. Unchecking a role removes it.
         </>
       }
       footer={
@@ -95,7 +98,7 @@ export function AssignRolesModal({
               assign.mutate({ userId, roles: [...selected] }, { onSuccess: () => onClose() })
             }
           >
-            {assign.isPending ? 'Saving…' : dirty ? `Save ${selected.size} role(s)` : 'No changes'}
+            {saveLabel}
           </Button>
         </>
       }
@@ -106,20 +109,21 @@ export function AssignRolesModal({
         onChange={(e) => setFilter(e.target.value)}
       />
 
-      {rolesQuery.isPending ? (
-        <Spinner label="Loading roles…" />
-      ) : rolesQuery.isError ? (
-        <ErrorNote error={rolesQuery.error} />
-      ) : options.length === 0 ? (
-        <EmptyState
-          title="No roles available"
-          description={
-            filter
-              ? 'Nothing matches your filter.'
-              : 'This organization has no roles yet — create one on the Roles page first.'
-          }
-        />
-      ) : (
+      <QueryState
+        query={rolesQuery}
+        loadingLabel="Loading roles…"
+        empty={options.length === 0}
+        emptyState={
+          <EmptyState
+            title="No roles available"
+            description={
+              filter
+                ? 'Nothing matches your filter.'
+                : 'This organization has no roles yet — create one on the Roles page first.'
+            }
+          />
+        }
+      >
         <div className="max-h-80 space-y-1 overflow-y-auto rounded-md border p-2">
           {options.map((r) => {
             const slug = r.slug ?? '';
@@ -156,7 +160,7 @@ export function AssignRolesModal({
             );
           })}
         </div>
-      )}
+      </QueryState>
 
       {/* Roles held but absent from this org's list — shown so a save doesn't look lossy. */}
       {outsideOrg.length > 0 && (

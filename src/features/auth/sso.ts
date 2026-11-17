@@ -39,7 +39,7 @@ export async function startLogin(): Promise<never> {
   if (!redirectUri) throw new Error('initiate returned no redirect_uri');
 
   // Step 2: hand the browser off to the Blocks-hosted login.
-  window.location.assign(redirectUri);
+  globalThis.location.assign(redirectUri);
   return new Promise<never>(() => {}); // navigation in flight; never resolves
 }
 

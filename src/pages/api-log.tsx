@@ -28,7 +28,7 @@ export function ApiLogPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const services = useMemo(
-    () => Array.from(new Set(entries.map((e) => e.service).filter(Boolean))).sort(),
+    () => Array.from(new Set(entries.map((e) => e.service).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [entries],
   );
 
@@ -102,7 +102,7 @@ export function ApiLogPage() {
         />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={onlyErrors} onChange={(e) => setOnlyErrors(e.target.checked)} />
-          Failures only
+          {'Failures only'}
         </label>
       </div>
 
@@ -145,13 +145,16 @@ export function ApiLogPage() {
 
         <Card className="min-w-0">
           <CardContent className="space-y-4 p-5">
-            {!selected ? (
-              <p className="text-sm text-muted-foreground">Select a request to see its details.</p>
-            ) : (
+            {selected ? (
               <>
                 <DetailList
                   rows={[
-                    ['Request', <span className="font-mono text-xs">{selected.method} {selected.url}</span>],
+                    [
+                      'Request',
+                      <span key="request" className="font-mono text-xs">
+                        {selected.method} {selected.url}
+                      </span>,
+                    ],
                     ['Status', selected.status ?? `Network error — ${selected.error}`],
                     ['Duration', `${selected.durationMs} ms`],
                     ['Started', new Date(selected.startedAt).toLocaleString()],
@@ -187,6 +190,8 @@ export function ApiLogPage() {
                   <JsonView value={selected.responseBody} />
                 </div>
               </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a request to see its details.</p>
             )}
           </CardContent>
         </Card>

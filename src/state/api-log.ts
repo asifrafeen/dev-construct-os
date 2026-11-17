@@ -59,7 +59,7 @@ export const useApiLog = create<ApiLogState>()((set) => ({
 
 export function serviceOf(url: string): string {
   try {
-    return new URL(url).pathname.split('/').filter(Boolean)[0] ?? '';
+    return new URL(url).pathname.split('/').find(Boolean) ?? '';
   } catch {
     return '';
   }

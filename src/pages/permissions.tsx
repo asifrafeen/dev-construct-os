@@ -5,11 +5,12 @@ import { permissions, type PermissionInput } from '@/features/permissions/api';
 import type { Permission } from '@/features/roles/api';
 import { useActiveOrg } from '@/features/orgs/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Modal, Field } from '@/components/ui/modal';
 import { Checkbox, Select, Textarea, splitList } from '@/components/ui/form';
 import { JsonView, PageHeader, Pager, Tabs } from '@/components/ui/layout';
+import { toText } from '@/lib/utils';
 
 const PAGE_SIZE = 20;
 type Tab = 'list' | 'catalog';
@@ -72,7 +73,11 @@ function PermissionList() {
   });
   const rows = list.data?.data ?? [];
   const total = list.data?.totalCount ?? 0;
-  const groupNames = (groups.data ?? []).map((g) => (typeof g === 'string' ? g : String((g as Record<string, unknown>).name ?? (g as Record<string, unknown>).resourceGroup ?? JSON.stringify(g))));
+  const groupNames = (groups.data ?? []).map((g) => {
+    if (typeof g === 'string') return g;
+    const rec = g as Record<string, unknown>;
+    return toText(rec.name ?? rec.resourceGroup ?? JSON.stringify(g));
+  });
 
   return (
     <Card>
@@ -100,13 +105,7 @@ function PermissionList() {
         </div>
       </CardHeader>
       <CardContent>
-        {list.isPending ? (
-          <Spinner />
-        ) : list.isError ? (
-          <ErrorNote error={list.error} />
-        ) : !rows.length ? (
-          <EmptyState title="No permissions match" />
-        ) : (
+        <QueryState query={list} empty={rows.length === 0} emptyState={<EmptyState title="No permissions match" />}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -153,7 +152,7 @@ function PermissionList() {
               </tbody>
             </table>
           </div>
-        )}
+        </QueryState>
         <Pager zeroBased page={page} pageCount={Math.ceil(total / PAGE_SIZE)} total={total} onChange={setPage} />
       </CardContent>
       {editing && (
@@ -186,16 +185,16 @@ function PermissionModal({
   groups,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   permission: Permission | null;
   groups: string[];
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   const p = permission as (Permission & { tags?: string[]; dependentPermissions?: string[]; type?: number; permissionSeverity?: number }) | null;
   const [name, setName] = useState(p?.name ?? '');
   const [resource, setResource] = useState(p?.resource ?? '');
-  const [resourceGroup, setGroup] = useState(p?.resourceGroup ?? groups[0] ?? '');
+  const [resourceGroup, setResourceGroup] = useState(p?.resourceGroup ?? groups[0] ?? '');
   const [description, setDescription] = useState(p?.description ?? '');
   const [tags, setTags] = useState((p?.tags ?? []).join(', '));
   const [dependents, setDependents] = useState((p?.dependentPermissions ?? []).join(', '));
@@ -213,7 +212,7 @@ function PermissionModal({
         type: Number(type),
         tags: splitList(tags),
         dependentPermissions: splitList(dependents),
-        ...(severity !== '' ? { permissionSeverity: Number(severity) } : {}),
+        ...(severity === '' ? {} : { permissionSeverity: Number(severity) }),
       };
       return p ? permissions.update(p.itemId, { ...input, isArchived: archivedFlag }) : permissions.create(input);
     },
@@ -238,7 +237,7 @@ function PermissionModal({
         <Input className="font-mono text-xs" value={resource} onChange={(e) => setResource(e.target.value)} />
       </Field>
       <Field label="Resource group">
-        <Input list="resource-groups" value={resourceGroup} onChange={(e) => setGroup(e.target.value)} />
+        <Input list="resource-groups" value={resourceGroup} onChange={(e) => setResourceGroup(e.target.value)} />
         <datalist id="resource-groups">
           {groups.map((g) => (
             <option key={g} value={g} />
@@ -268,7 +267,11 @@ function PermissionModal({
   );
 }
 
-function DeleteModal({ permission, onClose, onDone }: { permission: Permission; onClose: () => void; onDone: () => void }) {
+function DeleteModal({
+  permission,
+  onClose,
+  onDone,
+}: Readonly<{ permission: Permission; onClose: () => void; onDone: () => void }>) {
   const impact = useQuery({ queryKey: ['iam', 'permissions', 'impact', permission.itemId], queryFn: () => permissions.archiveImpact(permission.itemId), retry: false });
   const [confirm, setConfirm] = useState(false);
   const del = useMutation({ mutationFn: () => permissions.remove(permission.itemId, confirm), onSuccess: onDone });
@@ -284,7 +287,9 @@ function DeleteModal({ permission, onClose, onDone }: { permission: Permission; 
       }
     >
       <p className="text-sm font-medium">Archive impact</p>
-      {impact.isPending ? <Spinner /> : impact.isError ? <ErrorNote error={impact.error} /> : <JsonView value={impact.data} maxHeight="max-h-48" />}
+      <QueryState query={impact}>
+        <JsonView value={impact.data} maxHeight="max-h-48" />
+      </QueryState>
       <Checkbox
         label="Also revoke it from users who hold it directly"
         hint="Without this the server refuses to delete a permission still in use."
@@ -308,13 +313,21 @@ function Catalog() {
           <CardTitle className="text-base">Resource groups</CardTitle>
           <CardDescription>Read-only.</CardDescription>
         </CardHeader>
-        <CardContent>{groups.isPending ? <Spinner /> : groups.isError ? <ErrorNote error={groups.error} /> : <JsonView value={groups.data} />}</CardContent>
+        <CardContent>
+          <QueryState query={groups}>
+            <JsonView value={groups.data} />
+          </QueryState>
+        </CardContent>
       </Card>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">By severity</CardTitle>
         </CardHeader>
-        <CardContent>{severity.isPending ? <Spinner /> : severity.isError ? <ErrorNote error={severity.error} /> : <JsonView value={severity.data} />}</CardContent>
+        <CardContent>
+          <QueryState query={severity}>
+            <JsonView value={severity.data} />
+          </QueryState>
+        </CardContent>
       </Card>
       <Card>
         <CardHeader className="space-y-2">
@@ -323,11 +336,7 @@ function Catalog() {
           <Input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </CardHeader>
         <CardContent>
-          {features.isPending ? (
-            <Spinner />
-          ) : features.isError ? (
-            <ErrorNote error={features.error} />
-          ) : (
+          <QueryState query={features}>
             <ul className="max-h-96 divide-y overflow-y-auto text-sm">
               {(features.data ?? []).map((f, i) => (
                 <li key={`${f.resource}-${i}`} className="py-1.5">
@@ -336,7 +345,7 @@ function Catalog() {
                 </li>
               ))}
             </ul>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
     </div>

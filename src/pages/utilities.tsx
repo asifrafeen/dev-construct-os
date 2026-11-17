@@ -18,12 +18,12 @@ import {
 import { files } from '@/features/files/api';
 import { useUploadFile } from '@/features/files/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge, EmptyState, ErrorNote, Input, Spinner } from '@/components/ui/misc';
+import { Badge, EmptyState, ErrorNote, Input, QueryState } from '@/components/ui/misc';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/modal';
 import { Checkbox, Select, Textarea, parseJsonInput, splitList } from '@/components/ui/form';
 import { CopyButton, JsonView, PageHeader, Tabs } from '@/components/ui/layout';
-import { formatDate } from '@/lib/utils';
+import { formatDate, toText } from '@/lib/utils';
 
 type Tab = 'links' | 'sequence' | 'documents' | 'sms' | 'payments' | 'subscriptions';
 
@@ -59,7 +59,9 @@ export function UtilitiesPage() {
 }
 
 /** Error-or-result for any mutation. */
-function Out({ m }: { m: UseMutationResult<unknown, Error, unknown, unknown> | UseMutationResult<unknown, Error, void, unknown> }) {
+function Out({
+  m,
+}: Readonly<{ m: UseMutationResult<unknown, Error, unknown, unknown> | UseMutationResult<unknown, Error, void, unknown> }>) {
   if (m.isError) return <ErrorNote error={m.error} />;
   if (m.data !== undefined) return <JsonView value={m.data} maxHeight="max-h-64" />;
   return null;
@@ -70,7 +72,7 @@ function LinksTab() {
   const list = useQuery({ queryKey: ['utilities', 'links'], queryFn: () => magicLinks.list({ pageSize: 50 }) });
   const [type, setType] = useState<number>(MAGIC_LINK_TYPE.Redirect);
   const [name, setName] = useState('Construct OS test link');
-  const [uri, setUri] = useState(`${window.location.origin}/`);
+  const [uri, setUri] = useState(`${globalThis.location.origin}/`);
   const [method, setMethod] = useState<'GET' | 'POST' | 'PUT' | 'DELETE'>('POST');
   const [payload, setPayload] = useState('');
   const [usageLimit, setUsageLimit] = useState('0');
@@ -94,6 +96,7 @@ function LinksTab() {
     onSuccess: refresh,
   });
   const remove = useMutation({ mutationFn: (id: string) => magicLinks.remove([id]), onSuccess: refresh });
+  const links = list.data?.data ?? [];
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -156,15 +159,9 @@ function LinksTab() {
         </CardHeader>
         <CardContent>
           {remove.isError && <ErrorNote error={remove.error} />}
-          {list.isPending ? (
-            <Spinner />
-          ) : list.isError ? (
-            <ErrorNote error={list.error} />
-          ) : !list.data?.data?.length ? (
-            <EmptyState title="No links yet" />
-          ) : (
+          <QueryState query={list} empty={links.length === 0} emptyState={<EmptyState title="No links yet" />}>
             <ul className="divide-y text-sm">
-              {list.data.data.map((l) => (
+              {links.map((l) => (
                 <li key={l.itemId} className="flex items-center justify-between gap-2 py-2">
                   <div className="min-w-0">
                     <p className="truncate font-medium">
@@ -187,7 +184,7 @@ function LinksTab() {
                 </li>
               ))}
             </ul>
-          )}
+          </QueryState>
         </CardContent>
       </Card>
     </div>
@@ -240,8 +237,11 @@ function SequenceTab() {
           {locate.isError && <ErrorNote error={locate.error} />}
           {locate.data?.data && (
             <ul className="divide-y text-sm">
-              {locate.data.data.map((r, i) => (
-                <li key={i} className="flex items-center gap-2 py-2">
+              {locate.data.data.map((r) => (
+                <li
+                  key={`${r.startIp}-${r.city}-${r.region}-${r.countryName}-${r.ispName}`}
+                  className="flex items-center gap-2 py-2"
+                >
                   {r.countryFlagSvgUrl && <img src={r.countryFlagSvgUrl} alt="" className="h-4 w-6 rounded-sm object-cover" />}
                   <span>
                     <code>{r.startIp}</code> → {[r.city, r.region, r.countryName].filter(Boolean).join(', ')} · {r.ispName}
@@ -261,6 +261,12 @@ const SAMPLE_HTML = `<html><body style="font-family: sans-serif">
   <p>Generated through Blocks Utilities at ${new Date().toISOString()}.</p>
 </body></html>`;
 
+function jobStatusTone(status: unknown): 'success' | 'danger' | 'default' {
+  if (status === 2) return 'success';
+  if (status === 3) return 'danger';
+  return 'default';
+}
+
 function DocumentsTab() {
   const [html, setHtml] = useState(SAMPLE_HTML);
   const [fileName, setFileName] = useState('construct-os-test.pdf');
@@ -274,7 +280,7 @@ function DocumentsTab() {
   const [dryRun, setDryRun] = useState(false);
   const start = useMutation({ mutationFn: () => settle(docJobs.start(job, splitList(fileIds), job === 'pdf-ingestions' ? { dryRun } : {})) });
   const status = useMutation({ mutationFn: () => settle(docJobs.status(job, splitList(fileIds))) });
-  const results = ((status.data?.body as { data?: { results?: Record<string, unknown>[] } } | undefined)?.data?.results ?? []) as Record<string, unknown>[];
+  const results = (status.data?.body as { data?: { results?: Record<string, unknown>[] } } | undefined)?.data?.results ?? [];
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -292,7 +298,7 @@ function DocumentsTab() {
               {make.isPending ? 'Rendering…' : 'Generate PDF'}
             </Button>
             {make.data?.fileId && (
-              <Button variant="outline" disabled={open.isPending} onClick={() => open.mutate(make.data!.fileId!)}>
+              <Button variant="outline" disabled={open.isPending} onClick={() => open.mutate(make.data.fileId!)}>
                 Open PDF
               </Button>
             )}
@@ -352,11 +358,11 @@ function DocumentsTab() {
           {start.isError && <ErrorNote error={start.error} />}
           {results.length > 0 && (
             <ul className="divide-y text-sm">
-              {results.map((r, i) => (
-                <li key={i} className="py-2">
+              {results.map((r) => (
+                <li key={toText(r.fileId)} className="py-2">
                   <code className="text-xs">{String(r.fileId)}</code>{' '}
-                  <Badge tone={r.status === 2 ? 'success' : r.status === 3 ? 'danger' : 'default'}>
-                    {typeof r.status === 'number' ? JOB_STATUS[r.status] : String(r.status ?? '—')}
+                  <Badge tone={jobStatusTone(r.status)}>
+                    {typeof r.status === 'number' ? JOB_STATUS[r.status] : toText(r.status, '—')}
                   </Badge>
                   {typeof r.downloadUrl === 'string' && (
                     <a className="ml-2 text-xs text-primary underline" href={r.downloadUrl} target="_blank" rel="noreferrer">
@@ -433,7 +439,7 @@ function PaymentsTab() {
   const [amount, setAmount] = useState('10');
   const [currency, setCurrency] = useState('EUR');
   const [orderId, setOrderId] = useState(() => `CO-${Date.now()}`);
-  const [lookupId, setLookupId] = useState(() => new URLSearchParams(window.location.search).get('paymentDetailId') ?? '');
+  const [lookupId, setLookupId] = useState(() => new URLSearchParams(globalThis.location.search).get('paymentDetailId') ?? '');
   const create = useMutation({
     mutationFn: () =>
       payments.create(
@@ -499,7 +505,9 @@ function PaymentsTab() {
           <CardDescription>Needs blocks-utilities::payment::read / payment-method::read.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {list.isPending ? <Spinner /> : list.isError ? <ErrorNote error={list.error} /> : <JsonView value={list.data} maxHeight="max-h-64" />}
+          <QueryState query={list}>
+            <JsonView value={list.data} maxHeight="max-h-64" />
+          </QueryState>
           {methods.isError ? <ErrorNote error={methods.error} /> : <JsonView value={methods.data} maxHeight="max-h-40" />}
         </CardContent>
       </Card>
@@ -523,7 +531,11 @@ function SubscriptionsTab() {
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
-      <CardContent>{q.isPending ? <Spinner /> : q.isError ? <ErrorNote error={q.error} /> : <JsonView value={q.data} maxHeight="max-h-64" />}</CardContent>
+      <CardContent>
+        <QueryState query={q}>
+          <JsonView value={q.data} maxHeight="max-h-64" />
+        </QueryState>
+      </CardContent>
     </Card>
   );
 

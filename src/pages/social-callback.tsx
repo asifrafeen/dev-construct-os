@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Blocks, Loader2, ShieldAlert, UserPlus } from 'lucide-react';
@@ -33,7 +33,7 @@ export function SocialCallbackPage() {
     if (ran.current) return;
     ran.current = true;
 
-    finishSocialLogin(window.location.search)
+    finishSocialLogin(globalThis.location.search)
       .then(async () => {
         await qc.invalidateQueries({ queryKey: ME_KEY });
         navigate('/', { replace: true });
@@ -49,7 +49,7 @@ export function SocialCallbackPage() {
    * Create the membership, then replay the provider round-trip — the original
    * code and state were consumed by the failed attempt and cannot be reused.
    */
-  async function createAccount(event: FormEvent) {
+  async function createAccount(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const provider = pendingProviderName();
     if (!newEmail || !provider) {
