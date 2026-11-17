@@ -23,6 +23,7 @@
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage && node scripts/normalize-lcov.mjs",
+    "blocks:test": "vitest run --coverage --coverage.reportOnFailure --maxWorkers=2 && node scripts/normalize-lcov.mjs",
     "blocks:preflight": "bash scripts/blocks-preflight.sh",
     "blocks:configure-oidc": "bash scripts/blocks-configure-oidc.sh",
     "cert": "bash scripts/setup-https-cert.sh"

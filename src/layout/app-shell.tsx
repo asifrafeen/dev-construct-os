@@ -194,10 +194,10 @@ function ApiLogIndicator() {
 function Nav({ onNavigate }: Readonly<{ onNavigate?: () => void }>) {
   const t = useT();
   return (
-    <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+    <nav className="flex-1 space-y-5 overflow-y-auto p-4">
       {NAV.map((group) => (
         <div key={group.key}>
-          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
             {t(group.key, group.label)}
           </p>
           <div className="space-y-0.5">
@@ -209,7 +209,7 @@ function Nav({ onNavigate }: Readonly<{ onNavigate?: () => void }>) {
                 onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
                     isActive
                       ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
@@ -257,15 +257,17 @@ export function AppShell() {
   );
 
   const brand = (
-    <div className="flex h-16 shrink-0 items-center gap-2 border-b px-5">
-      <Blocks className="h-5 w-5 text-primary" />
+    <div className="flex h-16 shrink-0 items-center gap-3 border-b px-5">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+        <Blocks className="h-5 w-5" />
+      </span>
       <span className="font-semibold tracking-tight">Construct OS</span>
     </div>
   );
 
   return (
     <div className="flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-card md:flex">
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-gradient-to-b from-card to-muted/40 md:flex">
         {brand}
         <Nav />
         {signOut}
@@ -284,7 +286,7 @@ export function AppShell() {
             className="absolute inset-0 cursor-default bg-black/50"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="relative flex h-full w-64 flex-col border-r bg-card">
+          <aside className="relative flex h-full w-64 flex-col border-r bg-gradient-to-b from-card to-muted/40">
             <div className="flex items-center justify-between pr-2">
               {brand}
               <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)} aria-label="Close menu">
@@ -298,7 +300,7 @@ export function AppShell() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between gap-3 border-b px-4 md:px-5">
+        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b bg-card/85 px-4 backdrop-blur-md md:px-5">
           <div className="flex min-w-0 items-center gap-2">
             <Button
               variant="ghost"
@@ -332,7 +334,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 p-4 md:p-8">
+        <main className="min-w-0 flex-1 bg-gradient-to-b from-primary/5 via-background to-background p-4 md:p-8">
           <Outlet />
         </main>
       </div>

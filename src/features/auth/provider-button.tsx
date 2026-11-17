@@ -57,7 +57,7 @@ export function ProviderButton({
     <Button
       type="button"
       variant="outline"
-      className="w-full"
+      className="h-11 w-full rounded-xl border-[#d6e4e1] bg-white/70 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
       disabled={disabled}
       onClick={() => onSelect(provider)}
     >
